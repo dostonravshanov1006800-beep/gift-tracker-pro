@@ -452,6 +452,12 @@ function rslug(slug, gift){
 function artOf(slug){ return IMG_MIRROR + sstrip(slug) + '.webp?v=' + IMG_V; }
 /* картинка: скелетон → грузим → при ошибке 1 повтор → буква-заглушка */
 function imgFail(el){
+  var fb2 = el.getAttribute('data-fb2');
+  if (fb2 && el.src !== fb2){
+    el.setAttribute('data-fb2','');
+    el.src = fb2;
+    return;
+  }
   if (!el.getAttribute('data-r')){
     el.setAttribute('data-r','1');
     var s0 = el.src;
@@ -573,8 +579,9 @@ function renderShowcase(){
     var num = e.counter_issued || e.number || 0;
     var isNew = (now - evTs(e)) < 120 && evTs(e) > LASTVISIT;
     var jr = (jitter(num) - .5) * 2.2, jb = .97 + jitter(num+7) * .07;
+    var art = e.art || artOf(slug);
     return '<div class="scard aw" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*45, 400) + 'ms;--sd:' + (i%5)*0.9 + 's;--fd:' + (i%7)*0.4 + 's;--jr:' + jr.toFixed(1) + 'deg;--jb:' + jb.toFixed(2) + '">' +
-      '<div class="sart"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="fb" onload="this.classList.add(\'ld\')" onerror="imgFail(this)"></div>' +
+      '<div class="sart"><img loading="lazy" decoding="async" src="' + esc(art) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="fb" data-fb2="' + esc(artOf(slug)) + '" onload="this.classList.add(\'ld\')" onerror="imgFail(this)"></div>' +
       '<div class="sover"><div class="sname">' + esc(e.gift||slug) + '</div>' +
       '<div class="snum num">#' + fmtNum(num) + '</div>' +
       '<div class="sago">улучшен · <span data-ago="' + evTs(e) + '">' + esc(evAgo(e)) + '</span></div></div>' +
@@ -595,8 +602,9 @@ function renderFeed(){
     var slug = rslug(e.slug, e.gift);
     var num = e.counter_issued || e.number || 0;
     var isNew = (now - evTs(e)) < 120 && evTs(e) > LASTVISIT;
+    var art = e.art || artOf(slug);
     return '<div class="frow" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + '">' +
-      '<div class="fdot"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="sp" onload="this.classList.add(\'ld\')" onerror="imgFail(this)"></div>' +
+      '<div class="fdot"><img loading="lazy" decoding="async" src="' + esc(art) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="sp" data-fb2="' + esc(artOf(slug)) + '" onload="this.classList.add(\'ld\')" onerror="imgFail(this)"></div>' +
       '<div class="fbody"><div class="f1">' + esc(e.gift||slug) + ' <span class="fnum num">#' + fmtNum(num) + '</span></div>' +
       '<div class="f2">улучшен до NFT</div></div>' +
       '<span class="ftime"' + (isNew ? ' data-new="' + evTs(e) + '"' : '') + ' data-ago="' + evTs(e) + '">' + esc(evAgo(e)) + '</span></div>';
@@ -970,7 +978,7 @@ function refresh(light){
     });
     buildSlugMap();
     var evts = (statD.last_upgrades||[]).map(function(e){
-      var c = { slug: rslug(e.slug, e.gift), gift: e.gift, number: Number(e.number)||0, counter_issued: e.counter_issued, mint: e.mint };
+      var c = { slug: rslug(e.slug, e.gift), gift: e.gift, number: Number(e.number)||0, counter_issued: e.counter_issued, mint: e.mint, art: e.art || null };
       return c;
     }).filter(function(e){
       if (!e.slug || !e.number) return false;

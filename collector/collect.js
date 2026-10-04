@@ -50,6 +50,11 @@ const SCAN = {
 
 /* ─── оракул: существует ли NFT-номер (с атрибуцией запросов сканеру) ─── */
 const oracleCache = new Map();
+const artCache = new Map(); // slug#n -> уникальная картинка этого экземпляра (model/backdrop/symbol), из той же страницы оракула
+function extractArt(body){
+  const m = body.match(/property="og:image"\s+content="([^"]+)"/);
+  return m ? m[1] : null;
+}
 async function exists(slug, n, stat){
   const key = slug + '#' + n;
   if (oracleCache.has(key)) return oracleCache.get(key);
@@ -66,6 +71,7 @@ async function exists(slug, n, stat){
       const body = await res.text();
       const ok = body.indexOf('NFT was created') >= 0;
       oracleCache.set(key, ok);
+      if (ok){ const art = extractArt(body); if (art) artCache.set(key, art); }
       return ok;
     } catch(e) {
       if (attempt === 1) throw new Error('oracle-net:' + slug + '#' + n);
@@ -332,7 +338,8 @@ async function pool(items, n, fn){
     const r = result[slug];
     if (!r.newRange) continue;
     for (let n = r.newRange[0]; n <= r.newRange[1]; n++){
-      state.recent.unshift({ slug: slug, gift: null, number: n, mint: now });
+      const artKey = slug + '#' + n;
+      state.recent.unshift({ slug: slug, gift: null, number: n, mint: now, art: artCache.get(artKey) || null });
       addedEvents++;
     }
   }
@@ -396,7 +403,7 @@ async function pool(items, n, fn){
     });
   }
 
-  const lastUpg = state.recent.slice(0, 40).map(e => ({ slug: e.slug, gift: e.gift, number: e.number, counter_issued: e.number, mint: e.mint }));
+  const lastUpg = state.recent.slice(0, 40).map(e => ({ slug: e.slug, gift: e.gift, number: e.number, counter_issued: e.number, mint: e.mint, art: e.art || null }));
   const upgPerHour = state.recent.filter(e => now - Number(e.mint||0) <= 3600).length;
   writeJSON(path.join(DOCS, 'status.json'), {
     updated: new Date(now*1000).toISOString(),
