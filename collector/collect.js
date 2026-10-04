@@ -582,22 +582,8 @@ async function drainChannel(state, budgetMs){
         }
         await new Promise(r => setTimeout(r, SEND_GAP));
       }
-      /* обычные: ≤6 карточками, >6 сводкой */
-      if (normalList.length > 6){
-        const byCol = {}; const colSlug = {};
-        normalList.forEach(e => { const n = e.gift || e.slug; (byCol[n] = byCol[n] || []).push(e.number); colSlug[n] = e.slug; });
-        const lines = [];
-        for (const name in byCol){
-          const nums = byCol[name].sort((a,b)=>a-b);
-          const em = emojiOf(colSlug[name] || name, state);
-          lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
-        }
-        const r = await tg('sendMessage', { chat_id: chan, parse_mode: 'HTML',
-          text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') });
-        if (r.ok){ normalList.forEach(markSent); sent += normalList.length; }
-        await new Promise(r => setTimeout(r, SEND_GAP));
-      } else {
-        for (const e of normalList){
+      /* каждая карточка отдельно: нативная ссылка t.me/nft + живое превью-анимация */
+      for (const e of normalList){
           if (Date.now() >= deadline) break;
           const nm = e.gift || e.slug;
           const em = emojiOf(e.slug, state);
@@ -611,7 +597,6 @@ async function drainChannel(state, budgetMs){
             link_preview_options: { url: nftUrl, prefer_large_media: true } });
           if (r.ok){ markSent(e); sent++; }
           await new Promise(r => setTimeout(r, SEND_GAP));
-        }
       }
     }
     const left = state.pendingChan.length;
@@ -936,7 +921,7 @@ async function discoverCollections(registry, state, fragCache, now){
      (персистится ниже в state.json) и уходит первым следующим циклом */
   if (process.env.BOT_TOKEN && state.pending && state.pending.length){
     await drainPending(state, HOT ? 20000 : 45000);
-    if (process.env.CHANNEL_ID) await drainChannel(state, HOT ? 12000 : 25000);
+    if (process.env.CHANNEL_ID) await drainChannel(state, HOT ? 15000 : 40000);
   }
 
   state.ts = now;
