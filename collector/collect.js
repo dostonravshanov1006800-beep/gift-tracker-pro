@@ -442,9 +442,14 @@ async function drainPending(state, budgetMs){
   let sent = 0, black = 0;
   try {
     while (state.pending.length && Date.now() < deadline){
-      const batch = state.pending.slice(0, 60);
+      const batch = state.pending.slice(0, 20);
       /* фон батча: bdCache (тот же запрос, что и детект) отдаёт большинство
-         мгновенно, прямые запросы — параллельным пулом 6 */
+         мгновенно, прямые запросы — параллельным пулом 6. ЖЁСТКИЙ потолок 6с:
+         при бэклоге после рестарта процесса кэш фонов пуст (он только в памяти),
+         и без потолка пачка из 60 штук съедала ВЕСЬ бюджет отправки на одну
+         только проверку фонов — карточки не уходили совсем (очередь только росла).
+         Теперь то, что не успело определиться за 6с, уходит как обычная карточка
+         (фон неизвестен → не чёрная), остаток бюджета гарантированно идёт на отправку. */
       const bdOf = new Map();
       const queue = batch.slice();
       const worker = async () => {
@@ -454,10 +459,17 @@ async function drainPending(state, budgetMs){
           await new Promise(r => setTimeout(r, 30));
         }
       };
-      await Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker));
+      await Promise.race([
+        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
+        new Promise(r => setTimeout(r, 6000))
+      ]);
+      /* bdOf.has(e)===false значит фон НЕ успели проверить (таймаут 6с) —
+         такие остаются в очереди на следующий цикл, а не уходят как «не чёрные»:
+         иначе редкий чёрный фон мог бы проскочить без лейбла и без закрепа. */
+      const resolved = batch.filter(e => bdOf.has(e));
       const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
-      const blackList = batch.filter(isBlack);
-      const normalList = batch.filter(e => !isBlack(e));
+      const blackList = resolved.filter(isBlack);
+      const normalList = resolved.filter(e => !isBlack(e));
       const markSent = e => {
         state.pushed[e.slug + '#' + e.number] = 1;
         const i = state.pending.findIndex(x => x.slug === e.slug && x.number === e.number);
@@ -519,7 +531,8 @@ async function drainChannel(state, budgetMs){
   let sent = 0, black = 0;
   try {
     while (state.pendingChan.length && Date.now() < deadline){
-      const batch = state.pendingChan.slice(0, 60);
+      const batch = state.pendingChan.slice(0, 20);
+      /* тот же потолок 6с, что и в drainPending — см. комментарий там */
       const bdOf = new Map();
       const queue = batch.slice();
       const worker = async () => {
@@ -529,10 +542,16 @@ async function drainChannel(state, budgetMs){
           await new Promise(r => setTimeout(r, 30));
         }
       };
-      await Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker));
+      await Promise.race([
+        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
+        new Promise(r => setTimeout(r, 6000))
+      ]);
+      /* то же правило, что и в drainPending: непроверенные (таймаут) ждут
+         следующего цикла, а не отправляются как «не чёрные» наугад. */
+      const resolved = batch.filter(e => bdOf.has(e));
       const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
-      const blackList = batch.filter(isBlack);
-      const normalList = batch.filter(e => !isBlack(e));
+      const blackList = resolved.filter(isBlack);
+      const normalList = resolved.filter(e => !isBlack(e));
       const markSent = e => {
         state.pushedChan[e.slug + '#' + e.number] = 1;
         const i = state.pendingChan.findIndex(x => x.slug === e.slug && x.number === e.number);
@@ -581,6 +600,7 @@ async function drainChannel(state, budgetMs){
           if (r.ok){ markSent(e); sent++; }
           await new Promise(r => setTimeout(r, SEND_GAP));
       }
+      if (!resolved.length) break; /* то же: не зацикливаться на застрявшей пачке */
     }
     const left = state.pendingChan.length;
     if (sent || black) console.log('chan_push=' + (sent + black) + ' chan_black=' + black + ' chan_left=' + left);
