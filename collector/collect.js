@@ -411,6 +411,20 @@ function enqueuePush(events, state){
     const keys = Object.keys(state.pushed);
     if (keys.length > 600) keys.slice(0, keys.length - 600).forEach(k => delete state.pushed[k]);
     if (added) console.log('queued=' + added + ' (queue=' + state.pending.length + ')');
+    /* канал-витрина: те же события в отдельную очередь канала */
+    if (process.env.CHANNEL_ID){
+      state.pendingChan = state.pendingChan || [];
+      state.pushedChan = state.pushedChan || {};
+      const pk2 = new Set(state.pendingChan.map(e => e.slug + '#' + e.number));
+      for (const e of events){
+        const k = e.slug + '#' + e.number;
+        if (state.pushedChan[k] || pk2.has(k)) continue;
+        state.pendingChan.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null });
+        pk2.add(k);
+      }
+      const kc = Object.keys(state.pushedChan);
+      if (kc.length > 600) kc.slice(0, kc.length - 600).forEach(k => delete state.pushedChan[k]);
+    }
   } catch(e){ console.log('::warning::enqueue: ' + e.message); }
 }
 
@@ -511,6 +525,98 @@ async function drainPending(state, budgetMs){
   } catch(e){
     console.log('::warning::drain failed: ' + e.message);
   }
+  return sent + black;
+}
+/* ─ КАНАЛ-ВИТРИНА: один пост доходит до ВСЕХ подписчиков канала за один вызов API
+   (масштаб без потолка). Включается vars.CHANNEL_ID. Чёрные фоны закрепляются,
+   шторм уходит сводками, дедуп отдельный (state.pushedChan), CTA-кнопка на бота. ─ */
+async function drainChannel(state, budgetMs){
+  const chan = String(process.env.CHANNEL_ID || '').trim();
+  if (!chan || !state.pendingChan || !state.pendingChan.length) return 0;
+  const deadline = Date.now() + budgetMs;
+  state.pushedChan = state.pushedChan || {};
+  let sent = 0, black = 0;
+  try {
+    while (state.pendingChan.length && Date.now() < deadline){
+      const batch = state.pendingChan.slice(0, 60);
+      const bdOf = new Map();
+      const queue = batch.slice();
+      const worker = async () => {
+        while (queue.length){
+          const e = queue.shift();
+          bdOf.set(e, await getBackdrop(e.slug, e.number));
+          await new Promise(r => setTimeout(r, 30));
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker));
+      const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
+      const blackList = batch.filter(isBlack);
+      const normalList = batch.filter(e => !isBlack(e));
+      const markSent = e => {
+        state.pushedChan[e.slug + '#' + e.number] = 1;
+        const i = state.pendingChan.findIndex(x => x.slug === e.slug && x.number === e.number);
+        if (i >= 0) state.pendingChan.splice(i, 1);
+      };
+      const SEND_GAP = 1100;
+      const BOT_URL = 'https://t.me/lvlonebot';
+      /* чёрные — первыми, закреп в канале (disable_notification: подписчикам тихо) */
+      for (const e of blackList){
+        if (Date.now() >= deadline) break;
+        const nm = e.gift || e.slug;
+        const em = emojiOf(e.slug, state);
+        const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+        const bd = bdOf.get(e);
+        const cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
+          '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
+        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }],[{ text: '🤖 Лента в личку', url: BOT_URL }]] };
+        const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
+          link_preview_options: { url: nftUrl, prefer_large_media: true } });
+        if (r.ok){ markSent(e); black++; }
+        const mid = r.ok && r.result ? r.result.message_id : null;
+        if (mid){
+          try {
+            if (state.blackPinChan) await tg('unpinChatMessage', { chat_id: chan, message_id: state.blackPinChan }).catch(()=>{});
+            const p = await tg('pinChatMessage', { chat_id: chan, message_id: mid, disable_notification: true });
+            if (p.ok){ state.blackPinChan = mid; console.log('chan_pinned_black=' + e.slug + '#' + e.number); }
+          } catch(e2){ console.log('::warning::chan pin failed: ' + e2.message); }
+        }
+        await new Promise(r => setTimeout(r, SEND_GAP));
+      }
+      /* обычные: ≤6 карточками, >6 сводкой */
+      if (normalList.length > 6){
+        const byCol = {}; const colSlug = {};
+        normalList.forEach(e => { const n = e.gift || e.slug; (byCol[n] = byCol[n] || []).push(e.number); colSlug[n] = e.slug; });
+        const lines = [];
+        for (const name in byCol){
+          const nums = byCol[name].sort((a,b)=>a-b);
+          const em = emojiOf(colSlug[name] || name, state);
+          lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
+        }
+        const r = await tg('sendMessage', { chat_id: chan, parse_mode: 'HTML',
+          text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') + '\n\n🤖 Личная лента быстрее — @lvlonebot' });
+        if (r.ok){ normalList.forEach(markSent); sent += normalList.length; }
+        await new Promise(r => setTimeout(r, SEND_GAP));
+      } else {
+        for (const e of normalList){
+          if (Date.now() >= deadline) break;
+          const nm = e.gift || e.slug;
+          const em = emojiOf(e.slug, state);
+          const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+          const bd = bdOf.get(e);
+          let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
+          if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
+          cap += '\n' + nftUrl;
+          const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }],[{ text: '🤖 Бот', url: BOT_URL }]] };
+          const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
+            link_preview_options: { url: nftUrl, prefer_large_media: true } });
+          if (r.ok){ markSent(e); sent++; }
+          await new Promise(r => setTimeout(r, SEND_GAP));
+        }
+      }
+    }
+    const left = state.pendingChan.length;
+    if (sent || black) console.log('chan_push=' + (sent + black) + ' chan_black=' + black + ' chan_left=' + left);
+  } catch(e){ console.log('::warning::drainChannel failed: ' + e.message); }
   return sent + black;
 }
 function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -830,6 +936,7 @@ async function discoverCollections(registry, state, fragCache, now){
      (персистится ниже в state.json) и уходит первым следующим циклом */
   if (process.env.BOT_TOKEN && state.pending && state.pending.length){
     await drainPending(state, HOT ? 20000 : 45000);
+    if (process.env.CHANNEL_ID) await drainChannel(state, HOT ? 12000 : 25000);
   }
 
   state.ts = now;

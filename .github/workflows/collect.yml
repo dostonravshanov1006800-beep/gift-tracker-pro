@@ -25,6 +25,7 @@ jobs:
       KEEPALIVE_TOKEN: ${{ secrets.KEEPALIVE_TOKEN }}
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       TG_CHAT_ID: '8396883978'
+      CHANNEL_ID: ${{ vars.CHANNEL_ID }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - uses: actions/setup-node@v4
