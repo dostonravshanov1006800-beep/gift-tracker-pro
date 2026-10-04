@@ -357,25 +357,21 @@ async function pushUpgrades(events, state){
         /* фон экземпляра — один запрос, заодно попадает в подпись каждой карточки */
         const bd = await fetchBackdrop(e.slug, e.number);
         const black = bd && BLACK_BACKDROP_RE.test(bd);
-        let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен → <a href="' + nftUrl + '">до NFT</a>';
+        /* ссылка — ОТДЕЛЬНОЙ голой строкой (не внутри <a>текст</a>), чтобы Telegram
+           сам сгенерил родную анимированную карточку подарка с кнопкой «Показать
+           подарок» (это t.me — внутренний линк Telegram, он не «качает» картинку
+           с внешнего CDN как бот, а рисует карточку из своих данных — надёжно и
+           с анимацией). Свою картинку больше не грузим — только она давала плоский
+           обрезанный скриншот без анимации. */
+        let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
         if (bd) cap += '\n🎨 Фон: ' + esc_(bd) + (black ? ' · <b>РЕДКИЙ</b>' : '');
         if (black) cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + cap;
+        cap += '\n' + nftUrl;
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
         let mid = null;
-        /* фото ссылкой Telegram не умеет скачать с этого CDN — качаем сами и шлём файлом */
-        const imgBuf = e.art ? await fetchImageBytes(e.art) : null;
-        if (imgBuf){
-          const r = await tgSendPhotoFile(chat, imgBuf, cap, kb);
-          if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
-          else {
-            console.log('::warning::sendPhoto file failed: ' + (r.description||'?'));
-            const r2 = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
-            if (r2.ok && r2.result && r2.result.message_id) mid = r2.result.message_id;
-          }
-        } else {
-          const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
-          if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
-        }
+        const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+        if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
+        else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
         /* чёрный фон → закрепить сверху (сняв предыдущую чёрную) */
         if (black && mid){
           try {
