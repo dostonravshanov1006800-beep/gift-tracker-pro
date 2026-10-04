@@ -81,6 +81,18 @@ img{-webkit-user-drag:none}
 #hero .hsep{color:var(--faint);margin:0 6px;font-weight:400}
 #fresh{padding:11px 18px 0;font-size:11.5px;color:var(--mut);font-weight:700;display:flex;gap:7px;align-items:center;justify-content:center}
 #fresh i{width:6px;height:6px;border-radius:50%;background:var(--grn);flex:none}
+#fresh.ok i{background:#2fbf71;box-shadow:0 0 7px #2fbf71}
+#fresh.bad i{background:#e5484d;box-shadow:0 0 7px #e5484d}
+#fresh.bad{color:#e5484d}
+#brandStrip{display:flex;align-items:center;gap:12px;margin:2px 18px 0;padding:11px 16px;background:var(--card);border-radius:18px;box-shadow:var(--sh-md)}
+#brandStrip img{width:38px;height:38px;border-radius:12px;flex:none}
+#brandStrip .bsTxt b{display:block;font-size:12.5px;letter-spacing:.16em;font-weight:900}
+#brandStrip .bsTxt span{font-size:10.5px;color:var(--mut);font-weight:700}
+.sart,.cimgw,.fdot{position:relative}
+.sart,.cimgw{background:linear-gradient(100deg,var(--card2) 30%,var(--card) 50%,var(--card2) 70%);background-size:220% 100%;animation:skel 1.2s linear infinite}
+.sart img,.cimgw img,.fdot img{opacity:0;transition:opacity .22s}
+.sart img.ld,.cimgw img.ld,.fdot img.ld{opacity:1}
+@keyframes skel{0%{background-position:120% 0}100%{background-position:-120% 0}}
 
 /* ─── панель 5 сканеров ─── */
 #scanBox{margin:16px 18px 0;background:var(--card);border-radius:20px;
@@ -315,7 +327,11 @@ body.no-anim::before{animation:none}
 <main>
   <!-- ═══ ЭКРАН 1: УЛУЧШЕННЫЕ ПОДАРКИ ═══ -->
   <section class="pane on" id="p-live">
-    <div id="scanBox">
+    <div id="brandStrip">
+      <img src="logo.png" alt="Gift Atelier">
+      <div class="bsTxt"><b>GIFT ATELIER</b><span>живой канал улучшений · 5 сканеров в дозоре</span></div>
+    </div>
+    <div id="scanBox" hidden>
       <div class="scanH"><b>Сканеры · 5 систем</b><span id="scanSum"></span></div>
       <div id="scanList"></div>
     </div>
@@ -377,6 +393,9 @@ body.no-anim::before{animation:none}
 /* ═══ база ═══ */
 var BASE = location.href.replace(/[^/]*(\?.*)?$/, '');
 var IMG_MIRROR = 'img/';
+/* данные — напрямую с raw CDN: обновляется мгновенно после коммита воркера,
+   минуя пересборку GitHub Pages (она раньше добавляла 1-2 мин задержки) */
+var RAW = 'https://raw.githubusercontent.com/dostonravshanov1006800-beep/gift-tracker-pro/main/docs/';
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function fmtNum(n){ n = Number(n)||0; return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
@@ -401,8 +420,49 @@ function haptic(){ try { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOc
 function openLink(u){ try { if (tg && tg.openLink) tg.openLink(u); else window.open(u, '_blank'); } catch(e){ try { window.open(u, '_blank'); } catch(e2){} } }
 var toastT = 0;
 function toast(m){ var t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove('on'); }, 2600); }
-var IMG_V = 'bust7';
-function artOf(slug){ return IMG_MIRROR + String(slug).toLowerCase() + '.webp?v=' + IMG_V; }
+var IMG_V = 'bust8';
+var SLUGMAP = null;
+function sstrip(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function buildSlugMap(){
+  SLUGMAP = { exact:{}, strip:{}, name:{}, sname:{} };
+  giftsData.forEach(function(g){
+    var s = String(g.slug||g.name).trim().toLowerCase();
+    if (!s) return;
+    SLUGMAP.exact[s] = g.slug;
+    SLUGMAP.strip[sstrip(s)] = g.slug;
+    var nm = String(g.name||'').trim().toLowerCase();
+    if (nm){ SLUGMAP.name[nm] = g.slug; SLUGMAP.sname[sstrip(nm)] = g.slug; }
+  });
+}
+function rslug(slug, gift){
+  if (!SLUGMAP) buildSlugMap();
+  var s = String(slug||'').trim().toLowerCase();
+  if (SLUGMAP.exact[s]) return SLUGMAP.exact[s];
+  var st = sstrip(s);
+  if (st && SLUGMAP.strip[st]) return SLUGMAP.strip[st];
+  var nm = String(gift||'').trim().toLowerCase();
+  if (nm && SLUGMAP.name[nm]) return SLUGMAP.name[nm];
+  var ns = sstrip(nm);
+  if (ns && SLUGMAP.sname[ns]) return SLUGMAP.sname[ns];
+  var q = st || ns, best = null, bl = 0;
+  if (q && q.length >= 4) for (var k in SLUGMAP.strip){ if (k.length > bl && (q.indexOf(k) === 0 || k.indexOf(q) === 0)){ best = SLUGMAP.strip[k]; bl = k.length; } }
+  return best || String(slug||gift||'').trim();
+}
+function artOf(slug){ return IMG_MIRROR + sstrip(slug) + '.webp?v=' + IMG_V; }
+/* картинка: скелетон → грузим → при ошибке 1 повтор → буква-заглушка */
+function imgFail(el){
+  if (!el.getAttribute('data-r')){
+    el.setAttribute('data-r','1');
+    var s0 = el.src;
+    setTimeout(function(){ try { el.src = s0 + (s0.indexOf('&')>=0?'&':'?') + 'r=1'; } catch(e){} }, 400);
+    return;
+  }
+  var cls = el.getAttribute('data-fbc') || 'fb';
+  var d = document.createElement(cls === 'sp' ? 'span' : 'div');
+  if (cls !== 'sp') d.className = cls;
+  d.textContent = el.getAttribute('data-m') || 'G';
+  if (el.parentNode) el.parentNode.replaceChild(d, el);
+}
 function monogram(slug){ var s = String(slug||'at').replace(/[^A-Za-z0-9А-Яа-я]/g,''); return (s.slice(0,2) || 'G').toUpperCase(); }
 
 function jitter(n){ n = Math.abs(Math.round(n||0)); var x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); }
@@ -412,11 +472,13 @@ function addrShort(a){ a = String(a||''); return a.length > 10 ? a.slice(0,4) + 
 
 /* ═══ состояние ═══ */
 var giftsData = [], statD = {}, histData = [], scannerData = [];
+var LASTVISIT = Number(localStorage.getItem('gm_lastvisit')) || 0;
 var feedEvents = [], hotMap = {};
 function findBySlug(slug){ for (var i=0;i<giftsData.length;i++){ if (String(giftsData[i].slug||giftsData[i].name).trim() === slug) return giftsData[i]; } return null; }
 function evTs(e){ return Number(e.mint) || Math.floor(Number(new Date(e.ts||e.time||Date.now()))/1000) || 0; }
-function evAgo(e){ var s = Math.max(0, Math.floor(Date.now()/1000) - evTs(e));
-  if (s < 60) return 'сейчас'; if (s < 3600) return Math.floor(s/60) + ' мин'; if (s < 86400) return Math.floor(s/3600) + ' ч'; return Math.floor(s/86400) + ' дн'; }
+function agoSec(s){ s = Math.max(0, s);
+  if (s < 60) return s + ' сек'; if (s < 3600) return Math.floor(s/60) + ' мин'; if (s < 86400) return Math.floor(s/3600) + ' ч'; return Math.floor(s/86400) + ' дн'; }
+function evAgo(e){ return agoSec(Math.floor(Date.now()/1000) - evTs(e)); }
 function etaOf(slug, issued, total){
   if (!total || issued >= total) return { done: true };
   var own = findBySlug(slug);
@@ -435,7 +497,7 @@ function etaOf(slug, issued, total){
 function jget(f){
   var bust = (f.indexOf('?')>=0?'&':'?') + 't=' + Date.now();
   var c = new AbortController(); var t = setTimeout(function(){ c.abort(); }, 7000);
-  return fetch(BASE + f + bust, { signal: c.signal })
+  return fetch(RAW + f + bust, { signal: c.signal, cache: 'no-store' })
     .then(function(r){ clearTimeout(t); if(!r.ok) throw 0; return r.json(); })
     .then(function(j){ try{ localStorage.setItem('gmc:'+f, JSON.stringify(j)); }catch(e){} return j; })
     .catch(function(){
@@ -466,16 +528,10 @@ function renderStats(){
 
   /* видов — сколько разных коллекций улучшено (за сутки) */
   var dayAgo = Date.now()/1000 - 86400, kinds = {};
-  feedEvents.forEach(function(e){ var t = evTs(e); if (t >= dayAgo) kinds[String(e.slug||'').trim()] = 1; });
+  feedEvents.forEach(function(e){ var t = evTs(e); if (t >= dayAgo) kinds[rslug(e.slug, e.gift)] = 1; });
   setNum('roKinds', Object.keys(kinds).length);
-  var hourAgo = Date.now()/1000 - 3600, vel = 0;
-  feedEvents.forEach(function(e){ if (evTs(e) >= hourAgo) vel++; });
-  setNum('roVel', vel);
-  var su = Number(statD.updated_unix)||0;
-  if (su){
-    var mins = Math.max(0, Math.round((Date.now()/1000 - su) / 60));
-    $('freshTx').textContent = mins < 1 ? 'данные: только что' : 'данные: ' + mins + ' мин назад';
-  }
+  /* скорость/час — честная цифра с бэкенда (лента ограничена 40 строками и занижала) */
+  setNum('roVel', Number(statD.upg_per_hour)||0);
   $('upd').textContent = 'живой канал · 5 сканеров';
 }
 
@@ -507,16 +563,16 @@ function renderShowcase(){
   if (!evts.length){ row.innerHTML = '<div class="empty" style="min-width:260px">' + EMPTY_SVG + '<b>Пока без улучшений</b><span>5 сканеров ловят апгрейды с первоисточника</span></div>'; return; }
   var now = Date.now()/1000;
   row.innerHTML = evts.map(function(e, i){
-    var slug = String(e.slug||'').trim();
+    var slug = rslug(e.slug, e.gift);
     var num = e.counter_issued || e.number || 0;
-    var isNew = (now - evTs(e)) < 300;
+    var isNew = (now - evTs(e)) < 120 && evTs(e) > LASTVISIT;
     var jr = (jitter(num) - .5) * 2.2, jb = .97 + jitter(num+7) * .07;
     return '<div class="scard aw" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*45, 400) + 'ms;--sd:' + (i%5)*0.9 + 's;--fd:' + (i%7)*0.4 + 's;--jr:' + jr.toFixed(1) + 'deg;--jb:' + jb.toFixed(2) + '">' +
-      '<div class="sart"><img decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;fb&quot;>' + esc(monogram(slug)) + '</div>\'"></div>' +
+      '<div class="sart"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="fb" onload="this.classList.add(\'ld\')" onerror="imgFail(this)"></div>' +
       '<div class="sover"><div class="sname">' + esc(e.gift||slug) + '</div>' +
       '<div class="snum num">#' + fmtNum(num) + '</div>' +
-      '<div class="sago">улучшен · ' + esc(evAgo(e)) + '</div></div>' +
-      (isNew ? '<span class="schip hot">NEW</span>' : '') +
+      '<div class="sago">улучшен · <span data-ago="' + evTs(e) + '">' + esc(evAgo(e)) + '</span></div></div>' +
+      (isNew ? '<span class="schip hot" data-new="' + evTs(e) + '">NEW</span>' : '') +
     '</div>';
   }).join('');
   Array.prototype.forEach.call(row.querySelectorAll('.scard'), function(c){
@@ -530,13 +586,14 @@ function renderFeed(){
   if (!evts.length){ el.innerHTML = '<div class="empty">' + EMPTY_SVG + '<b>Лента пуста</b><span>появится после первых улучшений</span></div>'; return; }
   var now = Date.now()/1000;
   el.innerHTML = evts.map(function(e, i){
-    var slug = String(e.slug||'').trim();
+    var slug = rslug(e.slug, e.gift);
     var num = e.counter_issued || e.number || 0;
+    var isNew = (now - evTs(e)) < 120 && evTs(e) > LASTVISIT;
     return '<div class="frow" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + '">' +
-      '<div class="fdot"><img decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<span>' + esc(monogram(slug)) + '</span>\'"></div>' +
+      '<div class="fdot"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="sp" onload="this.classList.add(\'ld\')" onerror="imgFail(this)"></div>' +
       '<div class="fbody"><div class="f1">' + esc(e.gift||slug) + ' <span class="fnum num">#' + fmtNum(num) + '</span></div>' +
       '<div class="f2">улучшен до NFT</div></div>' +
-      '<span class="ftime" data-k="' + i + '">' + esc(evAgo(e)) + ((now - evTs(e)) < 300 ? ' · NEW' : '') + '</span></div>';
+      '<span class="ftime"' + (isNew ? ' data-new="' + evTs(e) + '"' : '') + ' data-ago="' + evTs(e) + '">' + esc(evAgo(e)) + '</span></div>';
   }).join('');
   Array.prototype.forEach.call(el.querySelectorAll('.frow'), function(r){
     r.addEventListener('click', function(){ haptic(); openColSheet(r.getAttribute('data-slug')); });
@@ -606,10 +663,10 @@ function renderCatalog(){
     var hotFresh = hot && (Date.now()/1000 - hotMap[slug]) < 1800;
     var eta = etaOf(slug, g.issued, g.total);
     var etaChip = fin ? '<b class="l">ЗАВЕРШЕНА</b>' :
-      (eta.hours ? (eta.hours < 1 ? '<b>менее часа</b>' : eta.hours <= 6 ? '<b class="m">~' + Math.round(eta.hours) + ' ч</b>' : '<b class="l">~' + (eta.hours/24).toFixed(1) + ' дн</b>') : '<b class="l">мало данных</b>');
+      (eta.hours ? (eta.hours < 1 ? '<b>менее часа</b>' : eta.hours <= 6 ? '<b class="m">~' + Math.round(eta.hours) + ' ч</b>' : '<b class="l">~' + (eta.hours/24).toFixed(1) + ' дн</b>') : '<b class="l">апгрейдов нет</b>');
     var jr2 = (jitter(g.issued||i) - .5) * 2.2, jb2 = .97 + jitter((g.issued||i)+7) * .07;
     return '<div class="ccard aw' + (fin ? ' fin' : '') + (hotFresh ? ' hotglow' : '') + '" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*28, 500) + 'ms;--sd:' + (i%5)*0.8 + 's;--fd:' + (i%7)*0.45 + 's;--jr:' + jr2.toFixed(1) + 'deg;--jb:' + jb2.toFixed(2) + '">' +
-      '<div class="cimgw"><img decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;cfb&quot;>' + esc(monogram(slug)) + '</div>\'">' +
+      '<div class="cimgw"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" data-m="' + esc(monogram(slug)) + '" data-fbc="cfb" onload="this.classList.add(\'ld\')" onerror="imgFail(this)">' +
       (hot ? '<span class="ctag hot">LIVE</span>' : (fin ? '<span class="ctag fin">FIN</span>' : '')) + '</div>' +
       '<div class="cinfo"><div class="cname">' + esc(g.name||slug) + '</div>' +
       '<div class="cnum num">' + fmtNum(g.issued) + ' / ' + fmtNum(g.total) + '</div>' +
@@ -632,7 +689,7 @@ function openColSheet(slug){
   var g = findBySlug(slug); if (!g) return;
   var pct = g.total ? Math.min(100, Math.round((g.issued/g.total)*100)) : 0;
   var eta = etaOf(slug, g.issued, g.total);
-  var etaLine = eta.done ? 'выпущено полностью' : (eta.hours ? (eta.hours < 24 ? '~' + Math.max(1, Math.round(eta.hours)) + ' ч' : '~' + (eta.hours/24).toFixed(1) + ' дн') : 'мало данных');
+  var etaLine = eta.done ? 'выпущено полностью' : (eta.hours ? (eta.hours < 24 ? '~' + Math.max(1, Math.round(eta.hours)) + ' ч' : '~' + (eta.hours/24).toFixed(1) + ' дн') : 'апгрейдов не было — скорость неизвестна');
   var recent = feedEvents.filter(function(e){ return String(e.slug||'').trim() === slug; }).slice(0,4);
   var html =
   '<div class="shgrid" style="--h:' + hueOf(slug) + '">' +
@@ -673,7 +730,12 @@ function renderSettings(){
   '<div class="srowS"><div class="st"><b>ЗВУК УЛУЧШЕНИЯ</b><span>сигнал при новом апгрейде</span></div><div class="sw' + (SOUND ? ' on' : '') + '" id="swSound"></div></div>' +
   '<div class="srowS"><div class="st"><b>БАННЕРЫ</b><span>всплывающие уведомления</span></div><div class="sw' + (NQ.cfg.banners ? ' on' : '') + '" id="swBan"></div></div>' +
   '<div class="srowS"><div class="st"><b>ВИБРАЦИЯ</b><span>отклик при событии</span></div><div class="sw' + (NQ.cfg.vibro ? ' on' : '') + '" id="swVib"></div></div>' +
-  '<div class="note">GIFT ATELIER · 5 независимых сканеров ищут улучшения на первоисточнике Telegram. Экран обновляется каждые 3 секунды из уже собранных данных; полный опрос Telegram сканерами идёт каждые 5 минут (GitHub Actions). После переноса на постоянный сервер цикл сканеров ускорится до секунд. Имена коллекций — данные nft.fragment.com.</div>';
+  '<div class="srowS"><div class="st"><b>ФИЛЬТР КОЛЛЕКЦИЙ</b><span>уведомления только о выбранных</span></div><button class="btn ghost" id="btnCols" style="padding:8px 14px;font-size:11px;font-weight:800">' + (NQ.cfg.cols && NQ.cfg.cols.length ? 'выбрано ' + NQ.cfg.cols.length : 'все') + '</button></div>' +
+  '<div id="colFlt" style="display:none;max-height:240px;overflow:auto;border-top:1px solid var(--line);margin-top:6px;padding-top:8px">' +
+    '<div style="display:flex;gap:6px;margin-bottom:8px"><input id="colQ" placeholder="поиск коллекции" style="flex:1;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font-size:12px;outline:none"><button class="btn ghost" id="colAll" style="padding:8px 12px;font-size:11px;font-weight:800">все</button></div>' +
+    '<div id="colList" style="display:flex;flex-direction:column;gap:2px"></div>' +
+  '</div>' +
+  '<div class="note">GIFT ATELIER · 5 независимых сканеров непрерывно опрашивают первоисточник Telegram (постоянный воркер), сайт обновляется каждые 4 секунды напрямую с raw-канала данных. Имена коллекций — nft.fragment.com.</div>';
   $('setBody').innerHTML = html;
   Array.prototype.forEach.call($('setBody').querySelectorAll('[data-th]'), function(b){
     b.addEventListener('click', function(){ THEME = b.getAttribute('data-th'); localStorage.setItem('gm_theme', THEME); applyTheme(); renderSettings(); });
@@ -682,18 +744,45 @@ function renderSettings(){
   $('swAnim').addEventListener('click', function(){ setAnim(!ANIM); renderSettings(); });
   $('swBan').addEventListener('click', function(){ NQ.cfg.banners = !NQ.cfg.banners; nqSave(); renderSettings(); });
   $('swVib').addEventListener('click', function(){ NQ.cfg.vibro = !NQ.cfg.vibro; nqSave(); renderSettings(); });
+  $('btnCols').addEventListener('click', function(){
+    var p = $('colFlt'); p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    if (p.style.display === 'block') renderColFilter();
+  });
+  $('colQ').addEventListener('input', renderColFilter);
+  $('colAll').addEventListener('click', function(){ NQ.cfg.cols = null; nqSave(); renderColFilter(); $('btnCols').textContent = 'все'; });
+}
+function renderColFilter(){
+  var q = ($('colQ') ? $('colQ').value : '').toLowerCase();
+  var sel = NQ.cfg.cols || [];
+  var list = giftsData.filter(function(g){ return !q || String(g.name||g.slug).toLowerCase().indexOf(q) >= 0; }).slice(0, 80);
+  $('colList').innerHTML = list.map(function(g){
+    var s = String(g.slug||g.name).trim();
+    var on = !NQ.cfg.cols || sel.indexOf(s) >= 0;
+    return '<div class="cfrow" data-s="' + esc(s) + '" style="display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:10px;cursor:pointer;font-size:12px;font-weight:700"><span class="cfk" style="width:18px;height:18px;border-radius:6px;flex:none;background:' + (on ? 'var(--accent)' : 'var(--card2)') + '"></span>' + esc(g.name||s) + '</div>';
+  }).join('');
+  Array.prototype.forEach.call($('colList').querySelectorAll('.cfrow'), function(r){
+    r.addEventListener('click', function(){
+      var s = r.getAttribute('data-s');
+      var cur = NQ.cfg.cols ? NQ.cfg.cols.slice() : giftsData.map(function(g){ return String(g.slug||g.name).trim(); });
+      var ix = cur.indexOf(s);
+      if (ix >= 0) cur.splice(ix, 1); else cur.push(s);
+      NQ.cfg.cols = cur.length ? cur : null;
+      nqSave(); renderColFilter();
+      $('btnCols').textContent = NQ.cfg.cols && NQ.cfg.cols.length ? ('выбрано ' + NQ.cfg.cols.length) : 'все';
+    });
+  });
 }</script>
 
 <script>
 "use strict";
 /* ═══ собственная система уведомлений (внутри мини-апа) ═══ */
-var NQ = { list: [], unread: 0, cfg: { sound: true, vibro: true, banners: true } };
+var NQ = { list: [], unread: 0, cfg: { sound: true, vibro: true, banners: true, cols: null } };
 function nqLoad(){
-  try { var l = JSON.parse(localStorage.getItem('radar_nq') || '[]'); if (Object.prototype.toString.call(l) === '[object Array]') NQ.list = l.slice(0, 60); } catch(e){}
-  try { var c = JSON.parse(localStorage.getItem('radar_ncfg') || 'null'); if (c) NQ.cfg = { sound: c.sound !== false, vibro: c.vibro !== false, banners: c.banners !== false }; } catch(e){}
+  try { var l = JSON.parse(localStorage.getItem('radar_nq') || '[]'); if (Object.prototype.toString.call(l) === '[object Array]') NQ.list = l.slice(0, 50); } catch(e){}
+  try { var c = JSON.parse(localStorage.getItem('radar_ncfg') || 'null'); if (c) NQ.cfg = { sound: c.sound !== false, vibro: c.vibro !== false, banners: c.banners !== false, cols: (Object.prototype.toString.call(c.cols) === '[object Array]' ? c.cols : null) }; } catch(e){}
 }
 function nqSave(){
-  try { localStorage.setItem('radar_nq', JSON.stringify(NQ.list.slice(0, 60))); } catch(e){}
+  try { localStorage.setItem('radar_nq', JSON.stringify(NQ.list.slice(0, 50))); } catch(e){}
   try { localStorage.setItem('radar_ncfg', JSON.stringify(NQ.cfg)); } catch(e){}
 }
 function nqAgo(ts){ var m = Math.max(0, Math.round((Date.now() - ts) / 60000));
@@ -725,7 +814,7 @@ function nqVibro(){
 function nqPush(type, ico, title, msg, slug, num){
   var n = { id: type+'-'+slug+'-'+num+'-'+Date.now(), type: type, ico: ico, title: title, msg: msg, slug: slug, num: num, ts: Date.now(), read: false };
   NQ.list.unshift(n);
-  if (NQ.list.length > 60) NQ.list.length = 60;
+  if (NQ.list.length > 50) NQ.list.length = 50;
   NQ.unread++; nqSave(); nqBadge(); nqRender();
   if (NQ.cfg.banners) nqBanner(n);
   nqSound(type); nqVibro();
@@ -802,29 +891,40 @@ function newUpgradeAlert(evts){
   if (firstLoad){ firstLoad = false; if (evts.length) lastSeenTs = evts[0].mint || 0; return; }
   var fresh = [];
   for (var i=0;i<evts.length;i++){ var t = evts[i].mint || 0; if (t > lastSeenTs) fresh.push(evts[i]); }
-  if (fresh.length && lastSeenTs){
+  /* фильтр коллекций: уведомляем только о выбранных */
+  var flt = NQ.cfg.cols;
+  var notify = flt && flt.length ? fresh.filter(function(e){ return flt.indexOf(e.slug) >= 0; }) : fresh;
+  if (notify.length && lastSeenTs){
     beep();
-    var newest = fresh[0];
+    var newest = notify[0];
     var slug = String(newest.slug||'').trim();
     var nm = newest.gift || slug;
     var num = newest.counter_issued || newest.number || 0;
     nqPush('upg','🚀','УЛУЧШЕНИЕ · ' + nm,
-      fresh.length > 1 ? ('#' + fmtNum(num) + ' и ещё ' + (fresh.length - 1) + ' — сканеры поймали ' + fresh.length + ' новых') : ('номер #' + fmtNum(num) + ' улучшен до NFT'),
+      notify.length > 1 ? ('#' + fmtNum(num) + ' и ещё ' + (notify.length - 1) + ' — поймано ' + notify.length + ' новых') : ('номер #' + fmtNum(num) + ' улучшен до NFT'),
       slug, Number(num));
   }
   if (evts.length) lastSeenTs = evts[0].mint || 0;
 }
 
-function updateTimes(){
+function tickAgo(){
+  /* индикатор свежести: от реального last_scan_at бэкенда, обновляется каждую секунду */
   var su = Number(statD.updated_unix)||0;
+  var fr = $('fresh'), fx = $('freshTx');
   if (su){
-    var mins = Math.max(0, Math.round((Date.now()/1000 - su) / 60));
-    $('freshTx').textContent = mins < 1 ? 'данные: только что' : 'данные: ' + mins + ' мин назад';
+    var age = Math.max(0, Math.floor(Date.now()/1000) - su);
+    var stale = age > 60;
+    if (fr){ fr.classList.toggle('bad', stale); fr.classList.toggle('ok', !stale); }
+    if (fx) fx.textContent = stale ? ('данные устарели · ' + agoSec(age) + ' назад') : ('живой канал · ' + agoSec(age) + ' назад');
   }
-  var ts = document.querySelectorAll('.ftime[data-k]');
-  for (var i=0;i<ts.length;i++){
-    var e = feedEvents[Number(ts[i].getAttribute('data-k'))||0];
-    if (e) ts[i].textContent = evAgo(e) + ((Date.now()/1000 - evTs(e)) < 300 ? ' · NEW' : '');
+  /* относительное время каждого события — тикает без перерисовки DOM */
+  var nowS = Math.floor(Date.now()/1000);
+  var els = document.querySelectorAll('[data-ago]');
+  for (var i=0;i<els.length;i++) els[i].textContent = agoSec(nowS - Number(els[i].getAttribute('data-ago'))||0);
+  /* NEW-бейдж живёт ровно 2 минуты */
+  var nw = document.querySelectorAll('[data-new]');
+  for (var j=0;j<nw.length;j++){
+    if (nowS - Number(nw[j].getAttribute('data-new')) > 120){ nw[j].parentNode.removeChild(nw[j]); }
   }
 }
 
@@ -841,9 +941,9 @@ function refresh(light){
     : [jget('status.json'), jget('gifts.json'), jget('history.json').catch(function(){ return { hours: [] }; }), jget('live.json').catch(function(){ return { items: {} }; })];
   Promise.all(FETCHES)
   .then(function(res){
-    if (res[0] && res[0].__stale && feedEvents.length) { updateTimes(); return; }
+    if (res[0] && res[0].__stale && feedEvents.length) { tickAgo(); return; }
     var raw = JSON.stringify(res[0]) + '|' + JSON.stringify(res[3]||{});
-    if (raw === lastRaw){ updateTimes(); return; }
+    if (raw === lastRaw){ tickAgo(); return; }
     lastRaw = raw;
     statD = res[0] || {};
     histData = (res[2] && res[2].hours) ? res[2].hours : (histData || []);
@@ -859,21 +959,34 @@ function refresh(light){
       var li = Number(lv.i)||0, gi = Number(g.issued)||0;
       if (li >= gi){ g.issued = li; g.total = Number(lv.t)||Number(g.total)||0; }
     });
-    var evts = (statD.last_upgrades||[]).slice().sort(function(a2,b2){
+    buildSlugMap();
+    var evts = (statD.last_upgrades||[]).map(function(e){
+      var c = { slug: rslug(e.slug, e.gift), gift: e.gift, number: Number(e.number)||0, counter_issued: e.counter_issued, mint: e.mint };
+      return c;
+    }).filter(function(e){
+      if (!e.slug || !e.number) return false;
+      return true;
+    });
+    /* дедупликация slug+номер: дубль сканера не попадает в ленту дважды */
+    var seen = {};
+    evts = evts.filter(function(e){ var k = e.slug + '#' + e.number; if (seen[k]) return false; seen[k] = true; return true; });
+    evts.sort(function(a2,b2){
       var ta = evTs(a2), tb = evTs(b2);
       if (tb !== ta) return tb - ta;
-      return (Number(b2.number)||0) - (Number(a2.number)||0);
+      return b2.number - a2.number;
     });
     feedEvents = evts;
     hotMap = {};
     var dayAgo = Date.now()/1000 - 86400;
     evts.forEach(function(e){
-      var t = evTs(e); var key = String(e.slug||'').trim();
-      if (!key || t < dayAgo) return;
+      var t = evTs(e); var key = e.slug;
+      if (t < dayAgo) return;
       if (!hotMap[key] || t > hotMap[key]) hotMap[key] = t;
     });
     newUpgradeAlert(evts);
     renderAll();
+    /* NEW — только для событий после последнего визита */
+    localStorage.setItem('gm_lastvisit', String(Math.floor(Date.now()/1000)));
   })
   .catch(function(){});
 }
@@ -888,8 +1001,12 @@ function refresh(light){
   if (window.BOOT.s) scannerData = window.BOOT.s;
   feedEvents = (statD.last_upgrades || []).slice();
   var dayAgo = Date.now()/1000 - 86400;
+  buildSlugMap();
   feedEvents.forEach(function(e){
-    var t = evTs(e); var key = String(e.slug||'').trim();
+    e.slug = rslug(e.slug, e.gift);
+  });
+  feedEvents.forEach(function(e){
+    var t = evTs(e); var key = e.slug;
     if (!key || t < dayAgo) return;
     if (!hotMap[key] || t > hotMap[key]) hotMap[key] = t;
   });
@@ -899,6 +1016,7 @@ function refresh(light){
 refresh(true);
 setTimeout(function(){ refresh(false); }, 2500);
 setInterval(function(){ if (!document.hidden) refresh(true); }, 4000);
+setInterval(function(){ if (!document.hidden) tickAgo(); }, 1000);
 setInterval(function(){ refresh(false); }, 180000);
 setInterval(function(){ if (feedEvents.length || giftsData.length) renderStats(); }, 30000);</script>
 

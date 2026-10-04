@@ -1,8 +1,11 @@
 name: Deploy Pages
-# §8.1(б): собственный workflow-деплой (артефакт) — лимит 10 сборок/час не действует.
-# Триггер только на изменение фронта; данные сайту не нужны (он тянет raw-CDN живьём).
+# Деплой оболочки: по push в docs/** (фронт) или вручную.
+# Данные сайту не нужны — он тянет их живьём с raw CDN.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['docs/**']
 
 permissions: { contents: read, pages: write, id-token: write }
 

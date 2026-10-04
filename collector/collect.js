@@ -265,6 +265,29 @@ async function pool(items, n, fn){
   const samples = readJSON(SAMPLES_PATH, { v: 1, s: {} });
   const fragCache = readJSON(FRAG_PATH, {});
   const now = Math.floor(Date.now()/1000);
+
+  /* миграция легаси-событий: slug мог быть именем с пробелами ('Candy Canes') —
+     приводим к каноничному slug реестра, чтобы арт и дедуп работали всегда */
+  const canIdx = {}, nameIdx = {};
+  function normS(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+  for (const c of registry){
+    const s = String(c.slug || c.name).trim();
+    canIdx[s.toLowerCase()] = s; canIdx[normS(s)] = s;
+    const nm = (fragCache[s] && fragCache[s].name) || c.name || s;
+    nameIdx[String(nm).toLowerCase()] = s; nameIdx[normS(nm)] = s;
+  }
+  function canonSlug(slug, gift){
+    const q = String(slug||'').trim().toLowerCase();
+    if (canIdx[q]) return canIdx[q];
+    if (canIdx[normS(q)]) return canIdx[normS(q)];
+    const g = String(gift||'').trim().toLowerCase();
+    if (nameIdx[g]) return nameIdx[g];
+    if (nameIdx[normS(g)]) return nameIdx[normS(g)];
+    const st = normS(q || g); let best = null, bl = 0;
+    for (const k in canIdx){ if (k.length > bl && st.length >= 4 && (st.indexOf(k) === 0 || k.indexOf(st) === 0)){ best = canIdx[k]; bl = k.length; } }
+    return best || String(slug||'').trim();
+  }
+  for (const e of (state.recent||[])) e.slug = canonSlug(e.slug, e.gift);
   const result = {};
   const failed = [];
 
@@ -316,7 +339,7 @@ async function pool(items, n, fn){
   const nameBySlug = {};
   registry.forEach(c => nameBySlug[String(c.slug||c.name).trim()] = c.name || c.slug);
   state.recent.forEach(e => { if (!e.gift) e.gift = (fragCache[e.slug] && fragCache[e.slug].name) || nameBySlug[e.slug] || e.slug; });
-  state.recent = state.recent.slice(0, 60);
+  state.recent = state.recent.slice(0, 200);
 
   /* состояние коллекций (имена — из Fragment, если есть) */
   let mintedTotal = 0, finished = 0;
@@ -374,10 +397,12 @@ async function pool(items, n, fn){
   }
 
   const lastUpg = state.recent.slice(0, 40).map(e => ({ slug: e.slug, gift: e.gift, number: e.number, counter_issued: e.number, mint: e.mint }));
+  const upgPerHour = state.recent.filter(e => now - Number(e.mint||0) <= 3600).length;
   writeJSON(path.join(DOCS, 'status.json'), {
     updated: new Date(now*1000).toISOString(),
     updated_unix: now,
     detected_total: mintedTotal,
+    upg_per_hour: upgPerHour,
     last_upgrades: lastUpg,
     scanners: scanOut,
     spikes: spikeList.slice(0, 10),
@@ -430,5 +455,6 @@ async function pool(items, n, fn){
   writeJSON(REG_PATH, registry);
 
   const sc = scanOut.map(s => s.id + '(' + s.req + 'req/' + s.found + ')').join(' ');
+  console.log('MARK new=' + addedEvents + ' frag=' + fragFetched + ' fix=' + corrections + ' events_h=' + upgPerHour);
   console.log('cycle ok: ' + Object.keys(result).length + '/' + registry.length + ' cols, +' + addedEvents + ' new, minted=' + mintedTotal + ', spikes=' + spikeList.length + ', verify-fix=' + corrections + ', frag+' + fragFetched + ', scanners=[' + sc + '], failed=' + failed.length + ', ' + (Date.now()-t0) + 'ms');
 })().catch(e => { console.log('::error::' + (e && e.message || e)); process.exit(1); });
