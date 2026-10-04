@@ -292,6 +292,7 @@ html[data-theme=light] #log,html[data-theme=light] .sheet,html[data-theme=light]
 </style>
 </head>
 <body>
+<!--SNAP-START--><script>window.BOOT={"ts":1791120113,"u":3013,"g":[["plushpepe","Plush Pepe",2825,2932],["algorithmcup","Algorithm Cup",188,188],["sweetpets","Sweet Pets",0,2500],["toothless","Toothless",0,4000]],"r":[]};</script><!--SNAP-END-->
 <div id="app">
 
   <header id="hud">
@@ -395,10 +396,7 @@ html[data-theme=light] #log,html[data-theme=light] .sheet,html[data-theme=light]
 var $ = function(id){ return document.getElementById(id); };
 var BASE = './';
 var IMG_MIRROR = 'img/';
-var RAW = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2pldGh1YnZpZGVvLWNvZGUvZ2lmdHRyYWNrZXItYm90L21haW4vZG9jcy8=');
-var JSD = atob('aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L2doL2pldGh1YnZpZGVvLWNvZGUvZ2lmdHRyYWNrZXItYm90QG1haW4vZG9jcy8=');
-var GM_SHA = 'main';
-var GHK = atob('aHR0cHM6Ly9yYXcuZ2l0aGFjay5jb20vamV0aHVidmlkZW8tY29kZS9naWZ0dHJhY2tlci1ib3QvbWFpbi9kb2NzLw==');
+
 var tg = null;
 (function initTg(n){
   var t = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
@@ -414,27 +412,18 @@ function haptic(){ try{ if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccu
 function openLink(u){ try{ if(tg && tg.openLink){ tg.openLink(u); return; } }catch(e){} window.open(u,'_blank'); }
 function toast(msg){ var t=$('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(function(){ t.classList.remove('on'); },2200); }
 function jget(f){
+  /* свои данные в своём репо: one origin, zero redirects */
   var bust = (f.indexOf('?')>=0?'&':'?') + 't=' + Date.now();
-  function tryFetch(url, ms){
-    var c = new AbortController(); var t = setTimeout(function(){ c.abort(); }, ms);
-    return fetch(url, { signal: c.signal }).then(function(r){ clearTimeout(t); if(!r.ok) throw 0; return r.json(); });
-  }
-  function save(j){ try{ localStorage.setItem('gmc:'+f, JSON.stringify(j)); }catch(e){} return j; }
-  return tryFetch(RAW + f + bust, 7000).then(save)
-      .catch(function(){ return tryFetch(JSD.replace('@main', '@' + GM_SHA) + f + bust, 7000).then(save); })
-      .catch(function(){ return tryFetch(BASE + f + bust, 9000).then(save); })
-      .catch(function(){ return tryFetch(GHK + f + bust, 7000).then(save); })
+  var c = new AbortController(); var t = setTimeout(function(){ c.abort(); }, 7000);
+  return fetch(BASE + f + bust, { signal: c.signal })
+    .then(function(r){ clearTimeout(t); if(!r.ok) throw 0; return r.json(); })
+    .then(function(j){ try{ localStorage.setItem('gmc:'+f, JSON.stringify(j)); }catch(e){} return j; })
     .catch(function(){
-      try { var c = localStorage.getItem('gmc:'+f); if (c) return JSON.parse(c); } catch(e){}
+      try { var c2 = localStorage.getItem('gmc:'+f); if (c2) return JSON.parse(c2); } catch(e){}
       return { __stale: true };
     });
 }
-var LIVENESS_TS = 0;
-function livenessPulse(){ var nowMs = Date.now(); if (nowMs - LIVENESS_TS < 120000) return; LIVENESS_TS = nowMs;
-  fetch('https://api.github.com/repos/jethubvideo-code/gifttracker-bot/commits?per_page=1')
-    .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(d){ if (d && d.length && d[0] && d[0].sha) GM_SHA = d[0].sha; })
-    .catch(function(){}); }
+
 /* тема */
 var THEME = localStorage.getItem('gm_theme') || 'auto';
 function applyTheme(){
@@ -464,6 +453,8 @@ function evAgo(e){
 }
 function etaOf(slug, issued, total){
   if (!total || issued >= total) return { done: true };
+  var own = findBySlug(slug);
+  if (own && own.rate) return { rate: own.rate, hours: (total - issued) / own.rate, own: true };
   var now = Date.now()/1000;
   var cur = null, old = null, oldest = null;
   for (var i=histData.length-1;i>=0;i--){
@@ -1004,16 +995,15 @@ function newUpgradeAlert(evts){
 }
 function refresh(first, light){
   var FETCHES = light
-    ? [jget('status.json'), jget('gifts.json'), null, null, null, null, jget('live.json').catch(function(){ return { items: {} }; })]
-    : [jget('status.json'), jget('gifts.json'), jget('images.json').catch(function(){ return {}; }), jget('history.json').catch(function(){ return { hours: [] }; }), jget('floors.json').catch(function(){ return { floors: {} }; }), jget('floors-hist.json').catch(function(){ return { hours: [] }; }), jget('live.json').catch(function(){ return { items: {} }; })];
+    ? [jget('status.json'), jget('gifts.json'), null, null, jget('live.json').catch(function(){ return { items: {} }; })]
+    : [jget('status.json'), jget('gifts.json'), jget('history.json').catch(function(){ return { hours: [] }; }), jget('floors.json').catch(function(){ return { floors: {} }; }), jget('live.json').catch(function(){ return { items: {} }; })];
   Promise.all(FETCHES)
   .then(function(res){
     if (res[0] && res[0].__stale && feedEvents.length) return;
     statD = res[0] || {};
-    imagesData = (res[2] && res[2].images) ? res[2].images : (imagesData || {});
-    histData = (res[3] && res[3].hours) ? res[3].hours : (histData || []);
+    histData = (res[2] && res[2].hours) ? res[2].hours : (histData || []);
     giftsData = (res[1] && res[1].gifts) ? res[1].gifts : [];
-    var liveItems = (res[6] && res[6].items) ? res[6].items : {};
+    var liveItems = (res[4] && res[4].items) ? res[4].items : {};
     var lvTs = 0;
     for (var lk in liveItems){ var lt = liveItems[lk] && Number(liveItems[lk].ts)||0; if (lt > lvTs) lvTs = lt; }
     liveTsMax = lvTs;
@@ -1042,9 +1032,8 @@ function refresh(first, light){
     var su = Math.max(Number(statD.updated_unix)||0, Number(liveTsMax)||0);
     var mins = su ? Math.max(0, Math.round(Date.now()/1000 - su)/60) : 0;
     $('upd').textContent = su ? 'данные: ' + (mins < 1 ? 'сейчас' : mins + ' мин назад') : '…';
-    if (mins >= 10) livenessPulse();
-    floorsData = res[4] && res[4].floors ? res[4] : (floorsData || { floors: {} });
-    floorsHist = res[5] && res[5].hours ? res[5].hours : (floorsHist || []);
+
+    floorsData = res[3] && res[3].floors ? res[3] : (floorsData || { floors: {} });
     /* показания */
     $('roUpg').textContent = fmtNum(statD.detected_total||0);
     var hourAgo = Date.now()/1000 - 3600;
@@ -1063,6 +1052,32 @@ function refresh(first, light){
     watchUpgrades();
   }).catch(function(){ $('upd').textContent = 'связь потеряна — ретрай…'; });
 }
+/* BOOT: срез данных вшит в HTML нашим сборщиком — первый кадр без единого запроса */
+(function bootPrime(){
+  if (!window.BOOT || !window.BOOT.g) return;
+  window.BOOT.g.forEach(function(x){
+    giftsData.push({ slug: x[0], name: x[1] || x[0], issued: x[2], total: x[3], rate: 0, added: 0 });
+  });
+  statD = { updated_unix: window.BOOT.ts, detected_total: window.BOOT.u, last_upgrades: window.BOOT.r || [] };
+  feedEvents = (statD.last_upgrades || []).slice();
+  var dayAgo = Date.now()/1000 - 86400;
+  feedEvents.forEach(function(e){
+    var t = evTs(e); var key = String(e.slug||'').trim();
+    if (!key || t < dayAgo) return;
+    if (!hotMap[key] || t > hotMap[key]) hotMap[key] = t;
+  });
+  feedEvents.forEach(function(e){ var key = String(e.slug||'').trim(); lastUpgMap[key] = e.counter_issued || e.number || 0; });
+  $('roUpg').textContent = fmtNum(statD.detected_total||0);
+  var hourAgo = Date.now()/1000 - 3600, vel = 0;
+  feedEvents.forEach(function(e){ if (evTs(e) >= hourAgo) vel++; });
+  $('roVel').textContent = String(vel);
+  $('roNet').textContent = fmtNum(giftsData.length);
+  var gl = tgtLoad(), hot = 0, near = 0, done = 0;
+  gl.forEach(function(t){ var s2 = t.st || 'watch'; if (s2 === 'hot') hot++; else if (s2 === 'near') near++; else if (s2 === 'done') done++; });
+  $('roGoal').textContent = gl.length ? (hot ? hot + '🔥' : (near ? near + '⏰' : (done ? done + '✓' : gl.length + '◎'))) : '—';
+  $('upd').textContent = 'данные: вшитый срез · грузим свежие…';
+  radarLayout(); radarStart(); renderGoals(); renderDeck(); renderLog();
+})();
 refresh(true, true);
 setTimeout(function(){ refresh(false); }, 2500);
 var GM_TICK = 0;
