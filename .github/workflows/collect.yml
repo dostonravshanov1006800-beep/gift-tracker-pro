@@ -19,7 +19,7 @@ concurrency:
 jobs:
   worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 29
+    timeout-minutes: 58
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -48,7 +48,7 @@ jobs:
                 git push -q || (sleep 4; git pull --rebase -q -X theirs origin main || true; git push -q || true)
               fi
               LAST_HB=$NOW
-            elif [ $((NOW - LAST_HB)) -ge 120 ]; then
+            elif [ $((NOW - LAST_HB)) -ge 45 ]; then
               git add docs/status.json
               if ! git diff --cached --quiet; then
                 git commit -q -m "collector: heartbeat ($(date -u +'%H:%M:%S'))"
