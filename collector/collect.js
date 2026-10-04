@@ -51,9 +51,17 @@ const SCAN = {
 /* ─── оракул: существует ли NFT-номер (с атрибуцией запросов сканеру) ─── */
 const oracleCache = new Map();
 const artCache = new Map(); // slug#n -> уникальная картинка этого экземпляра (model/backdrop/symbol), из той же страницы оракула
+const bdCache = new Map();  // slug#n -> Backdrop экземпляра, из ТОЙ ЖЕ страницы оракула (тот же запрос, что и детект — не может не быть)
 function extractArt(body){
   const m = body.match(/property="og:image"\s+content="([^"]+)"/);
   return m ? m[1] : null;
+}
+function extractBackdrop(body){
+  /* og:description: 'Model: X
+Backdrop: Y
+Symbol: Z' — берём значение Backdrop */
+  const m = body.match(/Backdrop:\s*([^\n<"]+)/);
+  return m ? m[1].trim() : null;
 }
 async function exists(slug, n, stat){
   const key = slug + '#' + n;
@@ -71,7 +79,10 @@ async function exists(slug, n, stat){
       const body = await res.text();
       const ok = body.indexOf('NFT was created') >= 0;
       oracleCache.set(key, ok);
-      if (ok){ const art = extractArt(body); if (art) artCache.set(key, art); }
+      if (ok){
+        const art = extractArt(body); if (art) artCache.set(key, art);
+        const bd = extractBackdrop(body); if (bd) bdCache.set(key, bd);
+      }
       return ok;
     } catch(e) {
       if (attempt === 1) throw new Error('oracle-net:' + slug + '#' + n);
@@ -309,17 +320,30 @@ async function tgSendPhotoFile(chat, imgBuf, caption, kb){
    карточка автоматически закрепляется сверху чата бота (предыдущая чёрная
    снимается — сверху всегда самая свежая, искать не нужно). */
 const BLACK_BACKDROP_RE = /black/i;
-async function fetchBackdrop(slug, num){
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 8000);
-    const res = await fetch('https://t.me/nft/' + String(slug).toLowerCase() + '-' + num, { headers: { 'User-Agent': UA }, signal: ctl.signal });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    const html = await res.text();
-    const m = html.match(/Backdrop:\s*([^\n<"]*)/);
-    return m ? m[1].trim() : null;
-  } catch(e){ return null; }
+async function getBackdrop(slug, num){
+  /* Кэш — главный путь: Backdrop извлечён из ТОГО ЖЕ запроса, которым обнаружен
+     апгрейд (exists() уже скачал страницу t.me/nft/<slug>-<n> и распарсил её).
+     Значит для свежего апгрейда фон уже лежит в памяти — дочитывать нечего и
+     падать нечему. Прямой запрос — только запасной путь с ретраями. */
+  const key = slug + '#' + num;
+  if (bdCache.has(key)) return bdCache.get(key);
+  for (let attempt = 0; attempt < 3; attempt++){
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 8000);
+      const res = await fetch('https://t.me/nft/' + String(slug).toLowerCase() + '-' + num, { headers: { 'User-Agent': UA }, signal: ctl.signal });
+      clearTimeout(t);
+      if (!res.ok) throw new Error('http ' + res.status);
+      const html = await res.text();
+      const bd = extractBackdrop(html);
+      if (bd){ bdCache.set(key, bd); return bd; }
+      return null; // страница прочитана, но Backdrop в ней нет — ретраи бессмысленны
+    } catch(e){
+      if (attempt === 2) return null;
+      await new Promise(r => setTimeout(r, 500 + Math.random()*500));
+    }
+  }
+  return null;
 }
 /* Пин создаёт служебное сообщение «X закрепил(а) ...» в чате — оно занимает ровно
    СЛЕДУЮЩИЙ message_id после закреплённого (проверено живым тестом: gap=2 между
@@ -356,7 +380,7 @@ async function pushUpgrades(events, state){
        карточками, а остальное — как раньше (пачка или по одной). */
     const bdOf = new Map();
     for (const e of fresh){
-      const bd = await fetchBackdrop(e.slug, e.number);
+      const bd = await getBackdrop(e.slug, e.number);
       bdOf.set(e, bd);
     }
     const blackList = fresh.filter(e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); });
