@@ -276,8 +276,8 @@ body::before{content:'';position:fixed;inset:-22%;z-index:-1;pointer-events:none
   animation:aurora 26s ease-in-out infinite;filter:blur(6px)}
 body.dark::before{opacity:.45}
 .sart img,.cimgw img{will-change:transform}
-.aw .sart img,.aw .cimgw img{animation:floaty 5.6s ease-in-out infinite;animation-play-state:paused;animation-delay:var(--fd,0s)}
-.aw.live .sart img,.aw.live .cimgw img{animation-play-state:running}
+.aw .sart img,.aw .cimgw img,.aw .sart .fb,.aw .cimgw .cfb{animation:floaty 5.6s ease-in-out infinite;animation-play-state:paused;animation-delay:var(--fd,0s)}
+.aw.live .sart img,.aw.live .cimgw img,.aw.live .sart .fb,.aw.live .cimgw .cfb{animation-play-state:running}
 .sart::after,.cimgw::after{content:'';position:absolute;top:0;bottom:0;width:36%;left:0;pointer-events:none;z-index:1;
   background:linear-gradient(100deg, transparent, hsla(200 100% 96% / .5), transparent);
   transform:translateX(-160%) skewX(-14deg);opacity:0}
