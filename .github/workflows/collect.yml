@@ -42,7 +42,7 @@ jobs:
             # $1 = выход коллектора, $2 = сколько новых
             NOW=$(date +%s)
             if [ "$2" -gt 0 ]; then
-              git add docs/gifts.json docs/status.json docs/live.json docs/history.json docs/fragment.json docs/index.html collector/state.json collector/samples.json collector/registry.json
+              git add docs/gifts.json docs/status.json docs/live.json docs/history.json docs/fragment.json docs/index.html docs/img collector/state.json collector/samples.json collector/registry.json
               if ! git diff --cached --quiet; then
                 echo "$1" | tail -2
                 git commit -q -m "collector: +$2 upg ($(date -u +'%H:%M:%S'))"

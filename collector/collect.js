@@ -316,6 +316,75 @@ async function pushUpgrades(events, state){
 }
 function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+/* ═══ DISCOVERY: автообнаружение новых коллекций с Fragment ═══
+   Fragment /gifts первым показывает свежие коллекции; каждый полный цикл сверяем
+   список с реестром. Новый слаг: (1) проверяем оракулом t.me/nft (первоисточник),
+   (2) находим точный выпуск экспонентой+бинаркой, (3) добавляем в реестр,
+   (4) тянем арт в собственное зеркало img/. Тираж Telegram объявляет отдельно —
+   до этого total=0 и сайт показывает ∞. */
+async function discoverCollections(registry, state, fragCache, now){
+  if (process.env.HOT === '1') return;   /* только в полных проходах */
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 15000);
+    const res = await fetch('https://fragment.com/gifts', { headers: { 'User-Agent': UA }, signal: ctl.signal });
+    clearTimeout(t);
+    if (!res.ok) return;
+    const html = await res.text();
+    const blocks = html.match(/<a href="\/gifts\/([A-Za-z0-9]+)"[^>]*data-keywords="([^"]*)"/g) || [];
+    const known = {};
+    registry.forEach(c => { known[String(c.slug||c.name).trim().toLowerCase()] = 1; });
+    let added = 0;
+    for (const b of blocks){
+      if (added >= 3) break;                      /* ≤3 новых за цикл — остальное потом */
+      const m = b.match(/href="\/gifts\/([A-Za-z0-9]+)"/); if (!m) continue;
+      const slugRaw = m[1];
+      const km = b.match(/data-keywords="([^"]*)"/);
+      const title = km ? km[1] : slugRaw;
+      if (known[slugRaw.toLowerCase()]) continue;
+      /* (1) оракул: номер #1 существует? нет — коллекция ещё не выпущена */
+      const one = await safeExists(slugRaw, 1, SCAN.s1);
+      if (!one) continue;
+      /* (2) точный выпуск: экспонента вверх + бинарный поиск */
+      let hi = 4;
+      while (hi < 5e6){
+        const r = await safeExists(slugRaw, hi, SCAN.s1);
+        if (r !== true) break;
+        hi *= 4;
+      }
+      let lo = 1;
+      while (lo < hi){
+        const mid = Math.ceil((lo + hi) / 2);
+        const r = await safeExists(slugRaw, mid, SCAN.s1);
+        if (r === null) break;
+        if (r) lo = mid; else hi = mid - 1;
+      }
+      /* (3) в реестр; счётчик сразу точный — Phase 1 возьмёт дешёвый S2-путь */
+      registry.push({ slug: slugRaw, name: title, total: 0 });
+      known[slugRaw.toLowerCase()] = 1;
+      state.c[slugRaw] = { i: lo, ts: now };
+      fragCache[slugRaw] = { name: title, img: 'https://nft.fragment.com/collection/' + slugRaw.toLowerCase() + '.webp', ts: now };
+      /* (4) арт в собственное зеркало (как остальные 121) */
+      try {
+        const ic = new AbortController();
+        const it = setTimeout(() => ic.abort(), 10000);
+        const ires = await fetch('https://fragment.com/file/gifts/' + slugRaw.toLowerCase() + '/thumb.webp', { headers: { 'User-Agent': UA }, signal: ic.signal });
+        clearTimeout(it);
+        if (ires.ok){
+          const buf = Buffer.from(await ires.arrayBuffer());
+          if (buf.length > 200 && buf.length < 60000){
+            fs.writeFileSync(path.join(DOCS, 'img', slugRaw.toLowerCase() + '.webp'), buf);
+          }
+        }
+      } catch(e){ /* арт не критичен: будет монограмма-фолбэк до след. попытки */ }
+      console.log('discovered=' + slugRaw + '#' + lo + ' (total: неизвестен, ∞)');
+      added++;
+    }
+  } catch(e){
+    console.log('::warning::discovery failed: ' + e.message);
+  }
+}
+
 /* ═══ main ═══ */
 (async () => {
   const t0 = Date.now();
@@ -366,6 +435,9 @@ function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
   }
   const hotSet = new Set(hotSlugs);
   const scanList = HOT ? registry.filter(c => hotSet.has(String(c.slug||c.name).trim())) : registry;
+
+  /* Фаза 0: автообнаружение новых коллекций (только полные проходы) */
+  if (!HOT) await discoverCollections(registry, state, fragCache, now);
 
   /* Фаза 1: S2+S1 сканируют все коллекции */
   await pool(scanList, POOL, async (col) => {
@@ -428,7 +500,8 @@ function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
     const r = result[slug] || { issued: state.c[slug] ? state.c[slug].i : 0 };
     const i = Math.max(0, r.issued);
     let total = c.total;
-    if (r.issued > total) total = r.issued;
+    if (!total) total = 0;                        /* тираж неизвестен — сайт покажет ∞ */
+    else if (r.issued > total) total = r.issued;  /* Telegram расширил тираж */
     mintedTotal += i;
     if (total && i >= total) finished++;
     state.c[slug] = { i: i, ts: now };
@@ -532,7 +605,7 @@ function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
   state.v = 2;
   writeJSON(STATE_PATH, state);
   writeJSON(SAMPLES_PATH, samples);
-  registry.forEach(c => { const slug = String(c.slug||c.name).trim(); if (result[slug] && result[slug].issued > c.total) c.total = result[slug].issued; });
+  registry.forEach(c => { const slug = String(c.slug||c.name).trim(); if (c.total && result[slug] && result[slug].issued > c.total) c.total = result[slug].issued; });
   writeJSON(REG_PATH, registry);
 
   const sc = scanOut.map(s => s.id + '(' + s.req + 'req/' + s.found + ')').join(' ');
