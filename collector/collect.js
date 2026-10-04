@@ -321,6 +321,19 @@ async function fetchBackdrop(slug, num){
     return m ? m[1].trim() : null;
   } catch(e){ return null; }
 }
+/* Пин создаёт служебное сообщение «X закрепил(а) ...» в чате — оно занимает ровно
+   СЛЕДУЮЩИЙ message_id после закреплённого (проверено живым тестом: gap=2 между
+   двумя соседними sendMessage, когда между ними был pinChatMessage). Удаляем его
+   сразу же, пока в чат не успело прийти что-то ещё — остаётся только сама закрепка
+   сверху чата, без мусорной строки внутри ленты. */
+async function pinAndCleanServiceMsg(chat, mid){
+  const p = await tg('pinChatMessage', { chat_id: chat, message_id: mid, disable_notification: true });
+  if (p.ok){
+    await new Promise(r => setTimeout(r, 350)); // дать Telegram время создать служебное сообщение
+    await tg('deleteMessage', { chat_id: chat, message_id: mid + 1 }).catch(()=>{});
+  }
+  return p.ok;
+}
 async function pushUpgrades(events, state){
   const chat = process.env.TG_CHAT_ID || '8396883978';
   try {
@@ -336,54 +349,76 @@ async function pushUpgrades(events, state){
 
     if (!fresh.length) return;
 
-    if (fresh.length > 6){
+    /* ЧЁРНЫЙ ФОН ПРОВЕРЯЕТСЯ ВСЕГДА, независимо от размера пачки — иначе в
+       всплеске из 7+ улучшений (120+ коллекций мониторятся одновременно) чёрный
+       фон мог затеряться в сводке и остаться незакреплённым. Бэкдроп читаем для
+       КАЖДОГО события в этом цикле, затем чёрные уходят отдельными закреплёнными
+       карточками, а остальное — как раньше (пачка или по одной). */
+    const bdOf = new Map();
+    for (const e of fresh){
+      const bd = await fetchBackdrop(e.slug, e.number);
+      bdOf.set(e, bd);
+    }
+    const blackList = fresh.filter(e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); });
+    const normalList = fresh.filter(e => !blackList.includes(e));
+
+    /* чёрные — всегда отдельной карточкой + закрепом, вне зависимости от размера пачки */
+    for (const e of blackList){
+      const nm = e.gift || e.slug;
+      const em = emojiOf(e.slug, state);
+      const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+      const bd = bdOf.get(e);
+      let cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
+        '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
+      const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+      const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+      const mid = r.ok && r.result ? r.result.message_id : null;
+      if (!r.ok) console.log('::warning::sendMessage(black) failed: ' + (r.description||'?'));
+      if (mid){
+        try {
+          if (state.blackPin) await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin }).catch(()=>{});
+          const pinned = await pinAndCleanServiceMsg(chat, mid);
+          if (pinned){ state.blackPin = mid; console.log('pinned_black=' + e.slug + '#' + e.number + ' backdrop=' + bd); }
+          else console.log('::warning::pin failed for ' + e.slug + '#' + e.number);
+        } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    /* остальное (не чёрное) — как раньше: пачкой при >6, иначе по одной */
+    if (normalList.length > 6){
       const byCol = {};
-      fresh.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
+      normalList.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
       const lines = [];
       const colSlug = {};
-      fresh.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
+      normalList.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
       for (const name in byCol){
         const nums = byCol[name].sort((a,b)=>a-b);
         const em = emojiOf(colSlug[name] || name, state);
         lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
       }
       await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
-        text: '⚡ <b>Пакет улучшений: ' + fresh.length + '</b>\n' + lines.join('\n') });
+        text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') });
     } else {
-      for (const e of fresh){
+      for (const e of normalList){
         const nm = e.gift || e.slug;
         const em = emojiOf(e.slug, state);
         const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-        /* фон экземпляра — один запрос, заодно попадает в подпись каждой карточки */
-        const bd = await fetchBackdrop(e.slug, e.number);
-        const black = bd && BLACK_BACKDROP_RE.test(bd);
+        const bd = bdOf.get(e);
         /* ссылка — ОТДЕЛЬНОЙ голой строкой (не внутри <a>текст</a>), чтобы Telegram
            сам сгенерил родную анимированную карточку подарка с кнопкой «Показать
-           подарок» (это t.me — внутренний линк Telegram, он не «качает» картинку
-           с внешнего CDN как бот, а рисует карточку из своих данных — надёжно и
-           с анимацией). Свою картинку больше не грузим — только она давала плоский
-           обрезанный скриншот без анимации. */
+           подарок» (t.me — внутренний линк Telegram, рисует карточку из своих
+           данных сам, без скачивания картинки — надёжно и с анимацией). */
         let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
-        if (bd) cap += '\n🎨 Фон: ' + esc_(bd) + (black ? ' · <b>РЕДКИЙ</b>' : '');
-        if (black) cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + cap;
+        if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
         cap += '\n' + nftUrl;
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-        let mid = null;
         const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
-        if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
-        else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
-        /* чёрный фон → закрепить сверху (сняв предыдущую чёрную) */
-        if (black && mid){
-          try {
-            if (state.blackPin) await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin });
-            const p = await tg('pinChatMessage', { chat_id: chat, message_id: mid, disable_notification: true });
-            if (p.ok){ state.blackPin = mid; console.log('pinned_black=' + e.slug + '#' + e.number + ' backdrop=' + bd); }
-          } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
-        }
+        if (!r.ok) console.log('::warning::sendMessage failed: ' + (r.description||'?'));
         await new Promise(r => setTimeout(r, 60));
       }
     }
-    console.log('push=' + fresh.length);
+    console.log('push=' + fresh.length + ' black=' + blackList.length);
   } catch(e){
     console.log('::warning::push failed: ' + e.message);
   }
