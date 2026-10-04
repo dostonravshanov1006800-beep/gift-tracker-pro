@@ -593,7 +593,7 @@ async function drainChannel(state, budgetMs){
           lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
         }
         const r = await tg('sendMessage', { chat_id: chan, parse_mode: 'HTML',
-          text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') + '\n\n🤖 Личная лента быстрее — @lvlonebot' });
+          text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') });
         if (r.ok){ normalList.forEach(markSent); sent += normalList.length; }
         await new Promise(r => setTimeout(r, SEND_GAP));
       } else {
