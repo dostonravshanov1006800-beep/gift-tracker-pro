@@ -1,6 +1,6 @@
 /* Gift Monitor PWA — офлайн-кэш оболочки, данные всегда из сети */
 var CACHE = 'atelier8-livefeed';
-var SHELL = ['./', './index.html', './logo.png', './icon-192.png', './icon-512.png', './icon.svg', './manifest.webmanifest'];
+var SHELL = ['./', './index.html', './logo.png', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
 self.addEventListener('install', function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(SHELL); }).then(function(){ return self.skipWaiting(); }));
 });
@@ -12,9 +12,7 @@ self.addEventListener('activate', function(e){
 self.addEventListener('fetch', function(e){
   var url = e.request.url;
   var isData = url.indexOf('status.json') >= 0 || url.indexOf('gifts.json') >= 0 ||
-               url.indexOf('images.json') >= 0 || url.indexOf('history.json') >= 0 ||
-               url.indexOf('floors.json') >= 0 || url.indexOf('floors-hist.json') >= 0 ||
-               url.indexOf('live.json') >= 0 || url.indexOf('version.json') >= 0;
+               url.indexOf('history.json') >= 0 || url.indexOf('live.json') >= 0;
   var isImg = url.indexOf('/img/') >= 0;
   if (isData || isImg){
     /* данные и картинки: сеть первая, кэшируем ТОЛЬКО успешные ответы, кэш — только офлайн-фолбэк */

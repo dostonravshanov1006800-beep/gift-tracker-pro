@@ -262,9 +262,64 @@ async function pool(items, n, fn){
   return netFails;
 }
 
+/* ═══ МГНОВЕННЫЙ ПУШ АПГРЕЙДОВ (как у Trackingonebot): карточка в чат через @lvlonebot ═══ */
+async function tg(method, body){
+  const res = await fetch('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/' + method, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(10000)
+  });
+  return res.json();
+}
+async function pushUpgrades(events, state){
+  const chat = process.env.TG_CHAT_ID || '8396883978';
+  try {
+    state.pushed = state.pushed || {};
+    const fresh = events.filter(e => {
+      const k = e.slug + '#' + e.number;
+      if (state.pushed[k]) return false;
+      state.pushed[k] = 1;
+      return true;
+    }).reverse();
+    const keys = Object.keys(state.pushed);
+    if (keys.length > 600) keys.slice(0, keys.length - 600).forEach(k => delete state.pushed[k]);
+
+    if (!fresh.length) return;
+
+    if (fresh.length > 6){
+      const byCol = {};
+      fresh.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
+      const lines = [];
+      for (const name in byCol){
+        const nums = byCol[name].sort((a,b)=>a-b);
+        lines.push('• <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
+      }
+      await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
+        text: '⚡ <b>Пакет улучшений: ' + fresh.length + '</b>\n' + lines.join('\n') });
+    } else {
+      for (const e of fresh){
+        const nm = e.gift || e.slug;
+        const cap = '🎁 <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен · ' + new Date().toISOString().slice(11,19) + ' UTC';
+        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number }]] };
+        if (e.art){
+          const r = await tg('sendPhoto', { chat_id: chat, photo: e.art, caption: cap, parse_mode: 'HTML', reply_markup: kb });
+          if (!r.ok) await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+        } else {
+          await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+        }
+        await new Promise(r => setTimeout(r, 60));
+      }
+    }
+    console.log('push=' + fresh.length);
+  } catch(e){
+    console.log('::warning::push failed: ' + e.message);
+  }
+}
+function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 /* ═══ main ═══ */
 (async () => {
   const t0 = Date.now();
+  const HOT = process.env.HOT === '1';
   const registry = readJSON(REG_PATH, []);
   if (!registry.length){ console.log('::error::registry empty'); process.exit(1); }
   const state = readJSON(STATE_PATH, { v: 1, ts: 0, c: {}, recent: [], scan: null, prevDeltas: {} });
@@ -297,8 +352,23 @@ async function pool(items, n, fn){
   const result = {};
   const failed = [];
 
+  /* горячий режим: только коллекции с событиями за последние 15 мин (до 12 шт) */
+  const hotSlugs = [];
+  if (HOT){
+    const seen = {};
+    for (const e of (state.recent||[])){
+      if (!e) continue;
+      if (now - Number(e.mint||0) <= 900 && !seen[e.slug]){ seen[e.slug] = 1; hotSlugs.push(e.slug); }
+      if (hotSlugs.length >= 12) break;
+    }
+    if (!hotSlugs.length){ console.log('hot=0 new=0 frag=0 fix=0'); process.exit(0); }
+    console.log('HOT lane: ' + hotSlugs.join(','));
+  }
+  const hotSet = new Set(hotSlugs);
+  const scanList = HOT ? registry.filter(c => hotSet.has(String(c.slug||c.name).trim())) : registry;
+
   /* Фаза 1: S2+S1 сканируют все коллекции */
-  await pool(registry, POOL, async (col) => {
+  await pool(scanList, POOL, async (col) => {
     const slug = String(col.slug || col.name).trim();
     const last = state.c[slug] ? state.c[slug].i : null;
     const i = await scanCollection(slug, last, col.total);
@@ -309,23 +379,23 @@ async function pool(items, n, fn){
       result[slug].last = last;
     }
   });
-  SCAN.s1.ok = true; SCAN.s2.ok = true;
+  if (!HOT){ SCAN.s1.ok = true; SCAN.s2.ok = true; }
 
-  const MIN_OK = Number(process.env.MIN_OK || 10);
+  const MIN_OK = HOT ? 1 : Number(process.env.MIN_OK || 10);
   if (Object.keys(result).length < MIN_OK){
     console.log('::error::oracle unusable, keep previous state (' + Object.keys(result).length + ' ok)');
     process.exit(1);
   }
 
   /* Фаза 2: S5 сторож аномалий (до записи событий) */
-  const spikeList = scanSentinel(result, state, state.prevDeltas || {});
+  const spikeList = HOT ? [] : scanSentinel(result, state, state.prevDeltas || {});
 
-  /* Фаза 3: S3 контроль диапазонов + S4 перепроверка */
-  const hotRanges = await scanRangeCheck(result);
-  const corrections = await scanVerify(result, registry);
+  /* Фаза 3: S3 контроль диапазонов + S4 перепроверка (в горячем режиме не нужны) */
+  const hotRanges = HOT ? [] : await scanRangeCheck(result);
+  const corrections = HOT ? [] : await scanVerify(result, registry);
 
-  /* Фаза 4: Fragment-имена (доп. данные) */
-  const fragFetched = await fetchFragment(fragCache, registry, now);
+  /* Фаза 4: Fragment-имена (доп. данные; в горячем режиме сеть не трогаем) */
+  const fragFetched = HOT ? 0 : await fetchFragment(fragCache, registry, now);
 
   /* дельты для S5 на следующий цикл */
   const prevDeltas = {};
@@ -347,6 +417,9 @@ async function pool(items, n, fn){
   registry.forEach(c => nameBySlug[String(c.slug||c.name).trim()] = c.name || c.slug);
   state.recent.forEach(e => { if (!e.gift) e.gift = (fragCache[e.slug] && fragCache[e.slug].name) || nameBySlug[e.slug] || e.slug; });
   state.recent = state.recent.slice(0, 200);
+  if (addedEvents > 0 && process.env.BOT_TOKEN){
+    await pushUpgrades(state.recent.slice(0, addedEvents), state);
+  }
 
   /* состояние коллекций (имена — из Fragment, если есть) */
   let mintedTotal = 0, finished = 0;
@@ -365,6 +438,7 @@ async function pool(items, n, fn){
 
   /* выборки скорости */
   for (const g of gifts){
+    if (HOT && !hotSet.has(g.slug)) continue;
     const arr = samples.s[g.slug] || [];
     arr.push([now, g.issued]);
     const cut = now - SAMPLES_WINDOW;
