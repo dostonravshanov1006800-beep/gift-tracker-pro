@@ -542,8 +542,7 @@ async function drainChannel(state, budgetMs){
         if (i >= 0) state.pendingChan.splice(i, 1);
       };
       const SEND_GAP = 1100;
-      const BOT_URL = 'https://t.me/lvlonebot';
-      /* чёрные — первыми (по возрастанию номера), закреп в канале (disable_notification: подписчикам тихо) */
+            /* чёрные — первыми (по возрастанию номера), закреп в канале (disable_notification: подписчикам тихо) */
       blackList.sort((a,b) => a.number - b.number);
       for (const e of blackList){
         if (Date.now() >= deadline) break;
@@ -553,7 +552,7 @@ async function drainChannel(state, budgetMs){
         const bd = bdOf.get(e);
         const cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
           '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
-        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }],[{ text: '🤖 Лента в личку', url: BOT_URL }]] };
+        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
         const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
           link_preview_options: { url: nftUrl, prefer_large_media: true } });
         if (r.ok){ markSent(e); black++; }
@@ -579,7 +578,7 @@ async function drainChannel(state, budgetMs){
           let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
           if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
           cap += '\n' + nftUrl;
-          const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }],[{ text: '🤖 Бот', url: BOT_URL }]] };
+          const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
           const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
             link_preview_options: { url: nftUrl, prefer_large_media: true } });
           if (r.ok){ markSent(e); sent++; }
