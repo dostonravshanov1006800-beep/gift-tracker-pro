@@ -289,17 +289,22 @@ async function pushUpgrades(events, state){
       const byCol = {};
       fresh.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
       const lines = [];
+      const colSlug = {};
+      fresh.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
       for (const name in byCol){
         const nums = byCol[name].sort((a,b)=>a-b);
-        lines.push('• <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
+        const em = emojiOf(colSlug[name] || name);
+        lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
       }
       await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
         text: '⚡ <b>Пакет улучшений: ' + fresh.length + '</b>\n' + lines.join('\n') });
     } else {
       for (const e of fresh){
         const nm = e.gift || e.slug;
-        const cap = '🎁 <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен · ' + new Date().toISOString().slice(11,19) + ' UTC';
-        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number }]] };
+        const em = emojiOf(e.slug);
+        const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+        const cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен → <a href="' + nftUrl + '">до NFT</a>';
+        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
         if (e.art){
           const r = await tg('sendPhoto', { chat_id: chat, photo: e.art, caption: cap, parse_mode: 'HTML', reply_markup: kb });
           if (!r.ok) await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
@@ -315,6 +320,14 @@ async function pushUpgrades(events, state){
   }
 }
 function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/* премиум-стикер на коллекцию: один и тот же символ для одной коллекции всегда,
+   разный для разных — чтобы узнавать коллекцию в ленте с одного взгляда, без чтения названия */
+const COLLECTION_EMOJI = ['🏮','💎','🔮','🌟','✨','🪄','👑','🎆','🧿','🔱','🫧','🪩','🎇','🌙','⚜️','🥇','🔥','🌌','🪬','💫','🎖️','🧨','🌠','🎐','🪅','🏆','🔆','🪞','🎊','🧊','🪆','🎏','🌃','🪔','🎉','💠'];
+function emojiOf(slug){
+  let h = 0; const s = String(slug);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return COLLECTION_EMOJI[h % COLLECTION_EMOJI.length];
+}
 
 /* ═══ DISCOVERY: автообнаружение новых коллекций с Fragment ═══
    Fragment /gifts первым показывает свежие коллекции; каждый полный цикл сверяем
