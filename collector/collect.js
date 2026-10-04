@@ -448,7 +448,7 @@ async function drainPending(state, budgetMs){
     const me = await tg('getMe', {}).catch(e => ({ ok: false, description: 'net:' + e.message }));
     console.log('DIAG tg.getMe ok=' + me.ok + ' user=' + ((me.result && me.result.username) || me.description || '?'));
   }
-  const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
+  const SEND_GAP = 400; /* sendMessage с превью сам занимает ~1-2с — реальный темп ~0.4-0.5/с, безопасно ниже лимита 1/сек */
   const markSent = e => {
     state.pushed[e.slug + '#' + e.number] = 1;
     const i = state.pending.findIndex(x => x.slug === e.slug && x.number === e.number);
@@ -547,7 +547,7 @@ async function drainChannel(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushedChan = state.pushedChan || {};
   let sent = 0, black = 0;
-  const SEND_GAP = 1100;
+  const SEND_GAP = 400; /* тот же безопасный темп, см. drainPending */
   const markSent = e => {
     state.pushedChan[e.slug + '#' + e.number] = 1;
     const i = state.pendingChan.findIndex(x => x.slug === e.slug && x.number === e.number);
@@ -970,8 +970,8 @@ async function discoverCollections(registry, state, fragCache, now){
   if (state.pendingChan) state.pendingChan = healQueue(state.pendingChan, state.pushedChan);
 
   if (process.env.BOT_TOKEN && state.pending && state.pending.length){
-    await drainPending(state, HOT ? 20000 : 45000);
-    if (process.env.CHANNEL_ID) await drainChannel(state, HOT ? 15000 : 40000);
+    await drainPending(state, HOT ? 25000 : 90000);
+    if (process.env.CHANNEL_ID) await drainChannel(state, HOT ? 20000 : 75000);
   }
 
   state.ts = now;
