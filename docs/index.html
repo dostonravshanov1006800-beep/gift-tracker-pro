@@ -501,8 +501,13 @@ function jget(f){
     .then(function(r){ clearTimeout(t); if(!r.ok) throw 0; return r.json(); })
     .then(function(j){ try{ localStorage.setItem('gmc:'+f, JSON.stringify(j)); }catch(e){} return j; })
     .catch(function(){
-      try { var c2 = localStorage.getItem('gmc:'+f); if (c2) return JSON.parse(c2); } catch(e){}
-      return { __stale: true };
+      /* raw недоступен — пробуем Pages (данные там реже, но живее localStorage) */
+      return fetch(BASE + f + bust, { cache: 'no-store' })
+        .then(function(r2){ if (!r2.ok) throw 0; return r2.json(); })
+        .catch(function(){
+          try { var c2 = localStorage.getItem('gmc:'+f); if (c2) return JSON.parse(c2); } catch(e){}
+          return { __stale: true };
+        });
     });
 }</script>
 
