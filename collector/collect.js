@@ -431,6 +431,12 @@ function enqueuePush(events, state){
 async function drainPending(state, budgetMs){
   if (!state.pending || !state.pending.length) return 0;
   const chat = process.env.TG_CHAT_ID || '8396883978';
+  /* закреп чёрных живёт ТОЛЬКО в канале: снимаем старый закреп из бота, если остался */
+  if (state.blackPin){
+    await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin }).catch(()=>{});
+    delete state.blackPin;
+    console.log('bot_pin_removed (закреп теперь только в канале)');
+  }
   const deadline = Date.now() + budgetMs;
   state.pushed = state.pushed || {};
   let sent = 0, black = 0;
@@ -459,7 +465,7 @@ async function drainPending(state, budgetMs){
       };
       const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
 
-      /* 1) чёрные — первыми (строго по возрастанию внутри чёрных), каждый отдельной карточкой + закреп */
+      /* 1) чёрные — первыми (строго по возрастанию), отдельной карточкой; закреп — ТОЛЬКО в канале */
       blackList.sort((a,b) => a.number - b.number);
       for (const e of blackList){
         if (Date.now() >= deadline) break; /* остаток в очереди — доотправит следующий цикл */
@@ -473,15 +479,6 @@ async function drainPending(state, budgetMs){
         const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
           link_preview_options: { url: nftUrl, prefer_large_media: true } });
         if (r.ok){ markSent(e); black++; } else console.log('::warning::sendMessage(black) failed: ' + (r.description||'?'));
-        const mid = r.ok && r.result ? r.result.message_id : null;
-        if (mid){
-          try {
-            if (state.blackPin) await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin }).catch(()=>{});
-            const pinned = await pinAndCleanServiceMsg(chat, mid);
-            if (pinned){ state.blackPin = mid; console.log('pinned_black=' + e.slug + '#' + e.number + ' backdrop=' + bd); }
-            else console.log('::warning::pin failed for ' + e.slug + '#' + e.number);
-          } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
-        }
         await new Promise(r => setTimeout(r, SEND_GAP));
       }
 
