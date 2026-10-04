@@ -404,7 +404,7 @@ function enqueuePush(events, state){
     for (const e of events){
       const k = e.slug + '#' + e.number;
       if (state.pushed[k] || pendingKeys.has(k)) continue;
-      state.pending.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null, bd: e.bd || null, bdChecked: !!e.bdChecked });
+      state.pending.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null, bd: e.bd || null, bdChecked: !!e.bdChecked, mint: e.mint || 0 });
       pendingKeys.add(k);
       added++;
     }
@@ -419,7 +419,7 @@ function enqueuePush(events, state){
       for (const e of events){
         const k = e.slug + '#' + e.number;
         if (state.pushedChan[k] || pk2.has(k)) continue;
-        state.pendingChan.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null, bd: e.bd || null, bdChecked: !!e.bdChecked });
+        state.pendingChan.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null, bd: e.bd || null, bdChecked: !!e.bdChecked, mint: e.mint || 0 });
         pk2.add(k);
       }
       const kc = Object.keys(state.pushedChan);
@@ -492,7 +492,7 @@ async function drainPending(state, budgetMs){
        единого доп. запроса. Чёрные — первыми, строго по возрастанию номера. */
     let ready = state.pending.filter(e => e.bdChecked);
     const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
-    ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+    ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
     for (const e of ready){
       if (Date.now() >= deadline) break;
       if (await sendOne(e) === false) break;
@@ -520,7 +520,7 @@ async function drainPending(state, budgetMs){
         new Promise(r => setTimeout(r, 6000))
       ]);
       const resolved = batch.filter(e => e.bdChecked);
-      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
       for (const e of resolved){
         if (Date.now() >= deadline) break;
         if (await sendOne(e) === false) break;
@@ -598,7 +598,7 @@ async function drainChannel(state, budgetMs){
        Чёрные — первыми (закреп + авточистка служебной надписи), по возрастанию. */
     let ready = state.pendingChan.filter(e => e.bdChecked);
     const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
-    ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+    ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
     for (const e of ready){
       if (Date.now() >= deadline) break;
       if (await sendOne(e) === false) break;
@@ -622,7 +622,7 @@ async function drainChannel(state, budgetMs){
         new Promise(r => setTimeout(r, 6000))
       ]);
       const resolved = batch.filter(e => e.bdChecked);
-      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
       for (const e of resolved){
         if (Date.now() >= deadline) break;
         if (await sendOne(e) === false) break;
