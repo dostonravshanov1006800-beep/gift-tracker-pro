@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="logo.webp" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 /* ══════════════════════════════════════════════════════════════════════
    GIFT MONITOR — BLUEPRINT v26
@@ -506,7 +506,6 @@ html[data-theme="light"] .skel{--skA:rgba(16,19,23,.05);--skB:rgba(16,19,23,.10)
 ::-webkit-scrollbar-track{background:var(--bg)}
 
 </style>
-<script>
 </head>
 <body>
 <div id="app">
@@ -653,7 +652,13 @@ var BASE = './';
 /* данные тянутся напрямую из источника — свежесть за секунды, без CDN-кэша */
 var RAW = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2pldGh1YnZpZGVvLWNvZGUvZ2lmdHRyYWNrZXItYm90L21haW4vZG9jcy8=');
 var tg = null;
-try { tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null; if (tg){ tg.ready(); tg.expand(); } } catch(e){}
+/* SDK подключается defer — он может грузиться и после старта страницы; ждём его опросом,
+   рендер при этом не блокируется (все использования tg под guard `if (tg)`) */
+(function initTg(n){
+  var t = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (t){ tg = t; try { tg.ready(); tg.expand(); } catch(e){} return; }
+  if (n < 25) setTimeout(function(){ initTg(n+1); }, 200);
+})(0);
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function fmtNum(n){ n = Number(n)||0; return n.toLocaleString('ru-RU').replace(/\u00A0/g,' '); }
 function fmtDate(ts){ var d = new Date(ts*1000), p = function(x){ return x<10?'0'+x:x; };
@@ -1425,7 +1430,8 @@ function refresh(first, light){
 /* ═══ init ═══ */
 applyTheme();
 applyI18n();
-refresh(true);
+refresh(true, true); /* PRO: критичные данные (33КБ) — мгновенно; история/флоры/картинки — в фоне */
+setTimeout(function(){ refresh(false); }, 2500);
 var GM_TICK = 0;
 setInterval(function(){ if (!document.hidden) { GM_TICK++; refresh(false, GM_TICK % 12 !== 0); } }, 5000); /* v23.1: лёгкий тик 5с, полный раз в 60с */ // фон-вкладка: не жжём трафик и батарейку
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) refresh(false); }); // возврат в мини-апп = мгновенное обновление
@@ -1622,20 +1628,5 @@ if (location.search.indexOf('debug=1') >= 0){
 }catch(e){}
 </script>
 
-<script>
-<script>
-/* TEMP PROBE v3: MutationObserver-лог */
-window.__log = [];
-window.__pe = function(m){ window.__log.push(String(m).slice(0,150)); var d=document.getElementById('probe2'); if(!d){ d=document.createElement('div'); d.id='probe2'; d.style.cssText='position:fixed;top:0;left:0;z-index:99999;background:#f00;color:#fff;font:11px monospace;padding:4px;max-width:100%;white-space:pre'; document.body.appendChild(d);} d.textContent = window.__log.slice(-6).join(' | '); };
-window.addEventListener('error', function(e){ window.__pe('JSERR '+(e.message||'').slice(0,80)+' @'+(e.lineno||'')+' '+(e.filename||'').split('/').pop()); });
-window.addEventListener('unhandledrejection', function(e){ window.__pe('REJ '+(e.reason && (e.reason.message||e.reason) || e.reason)); });
-setTimeout(function(){ window.__pe('boot s3=' + (document.getElementById('s3') ? 'YES' : 'NO')); }, 100);
-var _mo = new MutationObserver(function(muts){
-  var wiped = false, big = false;
-  muts.forEach(function(m){ if (m.removedNodes && m.removedNodes.length > 20) wiped = true; if (m.addedNodes && m.addedNodes.length > 20) big = true; });
-  if (wiped) window.__pe('BODY-WIPED removed>20 target=' + (document.body && document.body.id || 'body') + ' kids=' + document.body.childNodes.length);
-});
-_mo.observe(document.body, { childList: true, subtree: false });
-setTimeout(function(){ window.__pe('t+8s s3=' + (document.getElementById('s3') ? 'YES' : 'NO') + ' bodyKids=' + document.body.childNodes.length); }, 8000);
-</script></body>
+</body>
 </html>
