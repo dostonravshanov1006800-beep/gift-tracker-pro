@@ -440,80 +440,74 @@ async function drainPending(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushed = state.pushed || {};
   let sent = 0, black = 0;
+  const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
+  const markSent = e => {
+    state.pushed[e.slug + '#' + e.number] = 1;
+    const i = state.pending.findIndex(x => x.slug === e.slug && x.number === e.number);
+    if (i >= 0) state.pending.splice(i, 1);
+  };
+  const sendOne = async (e) => {
+    if (Date.now() >= deadline) return false;
+    const nm = e.gift || e.slug;
+    const em = emojiOf(e.slug, state);
+    const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+    const bd = e.bd;
+    const isBlack = bd && BLACK_BACKDROP_RE.test(bd);
+    let cap;
+    if (isBlack){
+      cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
+        '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
+    } else {
+      cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
+      if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
+      cap += '\n' + nftUrl;
+    }
+    const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+    const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
+      link_preview_options: { url: nftUrl, prefer_large_media: true } });
+    if (r.ok){ markSent(e); if (isBlack) black++; else sent++; }
+    else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
+    await new Promise(r => setTimeout(r, SEND_GAP));
+    return true;
+  };
   try {
-    while (state.pending.length && Date.now() < deadline){
-      const batch = state.pending.slice(0, 30);
-      /* фон уже лежит В САМОМ элементе очереди (e.bd) — захвачен в момент
-         обнаружения, той же страницей, что нашла номер. Доп. запрос нужен
-         только самым старым элементам очереди (до этого фикса), у которых
-         e.bd ещё нет — для них fallback с жёстким потолком 6с, чтобы не
-         повторить баг "весь бюджет на проверку фона, 0 карточек отправлено". */
-      const needFetch = batch.filter(e => !e.bdChecked);
-      if (needFetch.length){
-        const queue = needFetch.slice();
-        const worker = async () => {
-          while (queue.length){
-            const e = queue.shift();
-            e.bd = await getBackdrop(e.slug, e.number);
-            e.bdChecked = true;
-            await new Promise(r => setTimeout(r, 30));
-          }
-        };
-        await Promise.race([
-          Promise.all(Array.from({ length: Math.min(6, needFetch.length) }, worker)),
-          new Promise(r => setTimeout(r, 6000))
-        ]);
-      }
-      /* bdChecked===false значит фон НЕ успели проверить (таймаут 6с на fallback-
-         запросах старых элементов очереди) — такие остаются в очереди на следующий
-         цикл, а не уходят как «не чёрные»: иначе редкий чёрный фон мог бы проскочить
-         без лейбла и без закрепа. bd===null при bdChecked===true — легитимный факт
-         «фона нет в данных», это НЕ таймаут, повторно спрашивать нечего. */
-      const resolved = batch.filter(e => e.bdChecked);
-      const bdOf = new Map(resolved.map(e => [e, e.bd]));
-      const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
-      const blackList = resolved.filter(isBlack);
-      const normalList = resolved.filter(e => !isBlack(e));
-      const markSent = e => {
-        state.pushed[e.slug + '#' + e.number] = 1;
-        const i = state.pending.findIndex(x => x.slug === e.slug && x.number === e.number);
-        if (i >= 0) state.pending.splice(i, 1);
+    /* ФАЗА 1: всё, у чего фон УЖЕ известен (bdChecked=true — захвачен в момент
+       обнаружения, той же страницей, что нашла номер) — шлём немедленно, без
+       единого доп. запроса. Чёрные — первыми, строго по возрастанию номера. */
+    let ready = state.pending.filter(e => e.bdChecked);
+    const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
+    ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+    for (const e of ready){
+      if (Date.now() >= deadline) break;
+      await sendOne(e);
+    }
+    /* ФАЗА 2: остатком бюджета — fallback-проверка фона для старых элементов
+       очереди без bdChecked (до этого фикса фон не сохранялся в очереди).
+       Жёсткий потолок 6с: раньше без потолка такая проверка съедала ВЕСЬ
+       бюджет и ни одна карточка не уходила (push=0 подтверждено логами 7
+       циклов подряд). Теперь даже при полном сбое — максимум 6с простоя,
+       остальное время уже потрачено на фазу 1 (свежие карточки идут всегда). */
+    const stale = state.pending.filter(e => !e.bdChecked);
+    if (stale.length && Date.now() < deadline){
+      const batch = stale.slice(0, 15);
+      const queue = batch.slice();
+      const worker = async () => {
+        while (queue.length){
+          const e = queue.shift();
+          e.bd = await getBackdrop(e.slug, e.number);
+          e.bdChecked = true;
+          await new Promise(r => setTimeout(r, 30));
+        }
       };
-      const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
-
-      /* 1) чёрные — первыми (строго по возрастанию), отдельной карточкой; закреп — ТОЛЬКО в канале */
-      blackList.sort((a,b) => a.number - b.number);
-      for (const e of blackList){
-        if (Date.now() >= deadline) break; /* остаток в очереди — доотправит следующий цикл */
-        const nm = e.gift || e.slug;
-        const em = emojiOf(e.slug, state);
-        const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-        const bd = bdOf.get(e);
-        let cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
-          '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
-        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-        const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
-          link_preview_options: { url: nftUrl, prefer_large_media: true } });
-        if (r.ok){ markSent(e); black++; } else console.log('::warning::sendMessage(black) failed: ' + (r.description||'?'));
-        await new Promise(r => setTimeout(r, SEND_GAP));
-      }
-
-      /* каждая карточка отдельным постом, строго по возрастанию номера — живая анимация t.me/nft, без сводок */
-      normalList.sort((a,b) => a.number - b.number);
-      for (const e of normalList){
+      await Promise.race([
+        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
+        new Promise(r => setTimeout(r, 6000))
+      ]);
+      const resolved = batch.filter(e => e.bdChecked);
+      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+      for (const e of resolved){
         if (Date.now() >= deadline) break;
-        const nm = e.gift || e.slug;
-        const em = emojiOf(e.slug, state);
-        const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-        const bd = bdOf.get(e);
-        let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
-        if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
-        cap += '\n' + nftUrl;
-        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-        const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
-          link_preview_options: { url: nftUrl, prefer_large_media: true } });
-        if (r.ok){ markSent(e); sent++; } else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
-        await new Promise(r => setTimeout(r, SEND_GAP));
+        await sendOne(e);
       }
     }
     const left = state.pending.length;
@@ -533,82 +527,80 @@ async function drainChannel(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushedChan = state.pushedChan || {};
   let sent = 0, black = 0;
+  const SEND_GAP = 1100;
+  const markSent = e => {
+    state.pushedChan[e.slug + '#' + e.number] = 1;
+    const i = state.pendingChan.findIndex(x => x.slug === e.slug && x.number === e.number);
+    if (i >= 0) state.pendingChan.splice(i, 1);
+  };
+  const sendOne = async (e) => {
+    if (Date.now() >= deadline) return false;
+    const nm = e.gift || e.slug;
+    const em = emojiOf(e.slug, state);
+    const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+    const bd = e.bd;
+    const isBlack = bd && BLACK_BACKDROP_RE.test(bd);
+    let cap;
+    if (isBlack){
+      cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
+        '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
+    } else {
+      cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
+      if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
+      cap += '\n' + nftUrl;
+    }
+    const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+    const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
+      link_preview_options: { url: nftUrl, prefer_large_media: true } });
+    if (r.ok){ markSent(e); if (isBlack) black++; else sent++; }
+    if (isBlack){
+      const mid = r.ok && r.result ? r.result.message_id : null;
+      if (mid){
+        try {
+          if (state.blackPinChan) await tg('unpinChatMessage', { chat_id: chan, message_id: state.blackPinChan }).catch(()=>{});
+          const pinned = await pinAndCleanServiceMsg(chan, mid);
+          if (pinned){ state.blackPinChan = mid; console.log('chan_pinned_black=' + e.slug + '#' + e.number); }
+          else console.log('::warning::chan pin failed for ' + e.slug + '#' + e.number);
+        } catch(e2){ console.log('::warning::chan pin failed: ' + e2.message); }
+      }
+    }
+    await new Promise(r => setTimeout(r, SEND_GAP));
+    return true;
+  };
   try {
-    while (state.pendingChan.length && Date.now() < deadline){
-      const batch = state.pendingChan.slice(0, 30);
-      /* тот же принцип, что и в drainPending — см. комментарий там */
-      const needFetch = batch.filter(e => !e.bdChecked);
-      if (needFetch.length){
-        const queue = needFetch.slice();
-        const worker = async () => {
-          while (queue.length){
-            const e = queue.shift();
-            e.bd = await getBackdrop(e.slug, e.number);
-            e.bdChecked = true;
-            await new Promise(r => setTimeout(r, 30));
-          }
-        };
-        await Promise.race([
-          Promise.all(Array.from({ length: Math.min(6, needFetch.length) }, worker)),
-          new Promise(r => setTimeout(r, 6000))
-        ]);
-      }
-      /* то же правило, что и в drainPending: непроверенные (таймаут) ждут
-         следующего цикла, а не отправляются как «не чёрные» наугад. */
-      const resolved = batch.filter(e => e.bdChecked);
-      const bdOf = new Map(resolved.map(e => [e, e.bd]));
-      const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
-      const blackList = resolved.filter(isBlack);
-      const normalList = resolved.filter(e => !isBlack(e));
-      const markSent = e => {
-        state.pushedChan[e.slug + '#' + e.number] = 1;
-        const i = state.pendingChan.findIndex(x => x.slug === e.slug && x.number === e.number);
-        if (i >= 0) state.pendingChan.splice(i, 1);
-      };
-      const SEND_GAP = 1100;
-            /* чёрные — первыми (по возрастанию номера), закреп в канале (disable_notification: подписчикам тихо) */
-      blackList.sort((a,b) => a.number - b.number);
-      for (const e of blackList){
-        if (Date.now() >= deadline) break;
-        const nm = e.gift || e.slug;
-        const em = emojiOf(e.slug, state);
-        const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-        const bd = bdOf.get(e);
-        const cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
-          '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
-        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-        const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
-          link_preview_options: { url: nftUrl, prefer_large_media: true } });
-        if (r.ok){ markSent(e); black++; }
-        const mid = r.ok && r.result ? r.result.message_id : null;
-        if (mid){
-          try {
-            if (state.blackPinChan) await tg('unpinChatMessage', { chat_id: chan, message_id: state.blackPinChan }).catch(()=>{});
-            const pinned = await pinAndCleanServiceMsg(chan, mid);
-            if (pinned){ state.blackPinChan = mid; console.log('chan_pinned_black=' + e.slug + '#' + e.number); }
-            else console.log('::warning::chan pin failed for ' + e.slug + '#' + e.number);
-          } catch(e2){ console.log('::warning::chan pin failed: ' + e2.message); }
+    /* ФАЗА 1: фон уже известен (bdChecked) — шлём немедленно, без запросов.
+       Чёрные — первыми (закреп + авточистка служебной надписи), по возрастанию. */
+    let ready = state.pendingChan.filter(e => e.bdChecked);
+    const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
+    ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+    for (const e of ready){
+      if (Date.now() >= deadline) break;
+      await sendOne(e);
+    }
+    /* ФАЗА 2: остатком бюджета — fallback для старых элементов без bdChecked,
+       потолок 6с (см. комментарий в drainPending — тот же баг, тот же фикс). */
+    const stale = state.pendingChan.filter(e => !e.bdChecked);
+    if (stale.length && Date.now() < deadline){
+      const batch = stale.slice(0, 15);
+      const queue = batch.slice();
+      const worker = async () => {
+        while (queue.length){
+          const e = queue.shift();
+          e.bd = await getBackdrop(e.slug, e.number);
+          e.bdChecked = true;
+          await new Promise(r => setTimeout(r, 30));
         }
-        await new Promise(r => setTimeout(r, SEND_GAP));
+      };
+      await Promise.race([
+        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
+        new Promise(r => setTimeout(r, 6000))
+      ]);
+      const resolved = batch.filter(e => e.bdChecked);
+      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
+      for (const e of resolved){
+        if (Date.now() >= deadline) break;
+        await sendOne(e);
       }
-      /* каждая карточка отдельно, строго по возрастанию номера: нативная ссылка t.me/nft + живое превью-анимация */
-      normalList.sort((a,b) => a.number - b.number);
-      for (const e of normalList){
-          if (Date.now() >= deadline) break;
-          const nm = e.gift || e.slug;
-          const em = emojiOf(e.slug, state);
-          const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-          const bd = bdOf.get(e);
-          let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
-          if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
-          cap += '\n' + nftUrl;
-          const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-          const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
-            link_preview_options: { url: nftUrl, prefer_large_media: true } });
-          if (r.ok){ markSent(e); sent++; }
-          await new Promise(r => setTimeout(r, SEND_GAP));
-      }
-      if (!resolved.length) break; /* то же: не зацикливаться на застрявшей пачке */
     }
     const left = state.pendingChan.length;
     if (sent || black) console.log('chan_push=' + (sent + black) + ' chan_black=' + black + ' chan_left=' + left);
