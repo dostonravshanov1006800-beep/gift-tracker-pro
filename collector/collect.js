@@ -448,7 +448,7 @@ async function drainPending(state, budgetMs){
     const me = await tg('getMe', {}).catch(e => ({ ok: false, description: 'net:' + e.message }));
     console.log('DIAG tg.getMe ok=' + me.ok + ' user=' + ((me.result && me.result.username) || me.description || '?'));
   }
-  const SEND_GAP = 400; /* sendMessage с превью сам занимает ~1-2с — реальный темп ~0.4-0.5/с, безопасно ниже лимита 1/сек */
+  const SEND_GAP = 3000; /* УСТОЙЧИВЫЙ лимит Telegram ~20 сообщ/мин на чат: sendMessage с превью сам ~1-2с, gap 3с -> реальный темп 12-15/мин без 429. Живые логи 20:13: gap 400мс = вечный FLOOD 429 на каждый вызов, реальная скорость падала до 1-2 карточки/мин */
   const markSent = e => {
     state.pushed[e.slug + '#' + e.number] = 1;
     const i = state.pending.findIndex(x => x.slug === e.slug && x.number === e.number);
@@ -555,7 +555,7 @@ async function drainChannel(state, budgetMs){
     state.pendingChan = state.pendingChan.filter(e => !(e.bdChecked && !isBlackQ(e)));
     console.log('chan_blackonly: убрал обычных=' + nonBlack + ' chan_left=' + state.pendingChan.length);
   }
-  const SEND_GAP = 400; /* тот же безопасный темп, см. drainPending */
+  const SEND_GAP = 3000; /* тот же устойчивый темп без 429, см. drainPending */
   const markSent = e => {
     state.pushedChan[e.slug + '#' + e.number] = 1;
     const i = state.pendingChan.findIndex(x => x.slug === e.slug && x.number === e.number);
