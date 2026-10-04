@@ -386,110 +386,132 @@ async function pinAndCleanServiceMsg(chat, mid){
   }
   return p.ok;
 }
-async function pushUpgrades(events, state){
-  const chat = process.env.TG_CHAT_ID || '8396883978';
+/* ═══ АСИНХРОННЫЙ ПУШ: скан НИКОГДА не ждёт Telegram ═══
+   Раньше pushUpgrades блокировал цикл: пока Telegram принимал карточки
+   (лимит ~1/сек на чат + 429-ожидания по 3-8 сек), детект стоял. При урагане
+   задержка росла снежным комом — бот «тормозил» именно в моменты всплесков.
+   Теперь: события мгновенно падают в персистентную очередь state.pending
+   (живёт в state.json, рестарт воркера ничего не теряет), скан продолжается
+   на полной скорости, а drainPending в КОНЦЕ цикла рассылает очередь в темпе
+   Telegram с честным бюджетом времени. Недоставленное остаётся в очереди и
+   уходит первым же следующим циклом. Бот работает 24/7/365 без торможений. */
+function enqueuePush(events, state){
   try {
+    state.pending = state.pending || [];
     state.pushed = state.pushed || {};
-    const fresh = events.filter(e => {
+    const pendingKeys = new Set(state.pending.map(e => e.slug + '#' + e.number));
+    let added = 0;
+    for (const e of events){
       const k = e.slug + '#' + e.number;
-      if (state.pushed[k]) return false;
-      state.pushed[k] = 1;
-      return true;
-    }).reverse();
+      if (state.pushed[k] || pendingKeys.has(k)) continue;
+      state.pending.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null });
+      pendingKeys.add(k);
+      added++;
+    }
     const keys = Object.keys(state.pushed);
     if (keys.length > 600) keys.slice(0, keys.length - 600).forEach(k => delete state.pushed[k]);
+    if (added) console.log('queued=' + added + ' (queue=' + state.pending.length + ')');
+  } catch(e){ console.log('::warning::enqueue: ' + e.message); }
+}
 
-    if (!fresh.length) return;
-
-    /* ЧЁРНЫЙ ФОН ПРОВЕРЯЕТСЯ ВСЕГДА, независимо от размера пачки — иначе в
-       всплеске из 7+ улучшений (120+ коллекций мониторятся одновременно) чёрный
-       фон мог затеряться в сводке и остаться незакреплённым. Бэкдроп читаем для
-       КАЖДОГО события в этом цикле, затем чёрные уходят отдельными закреплёнными
-       карточками, а остальное — как раньше (пачка или по одной). */
-    const bdOf = new Map();
-    if (fresh.length > 1){
-      /* ураган: фон для всех номеров читаем ПАРАЛЛЕЛЬНО (пул 6) — 100 номеров
-         читаются за ~15-20 сек вместо минут последовательных запросов; кэш детекта
-         (bdCache) отдаёт большинство мгновенно, прямые запросы идут только тем,
-         кого бинарный поиск не трогал */
-      const queue = fresh.slice();
+async function drainPending(state, budgetMs){
+  if (!state.pending || !state.pending.length) return 0;
+  const chat = process.env.TG_CHAT_ID || '8396883978';
+  const deadline = Date.now() + budgetMs;
+  state.pushed = state.pushed || {};
+  let sent = 0, black = 0;
+  try {
+    while (state.pending.length && Date.now() < deadline){
+      const batch = state.pending.slice(0, 60);
+      /* фон батча: bdCache (тот же запрос, что и детект) отдаёт большинство
+         мгновенно, прямые запросы — параллельным пулом 6 */
+      const bdOf = new Map();
+      const queue = batch.slice();
       const worker = async () => {
         while (queue.length){
           const e = queue.shift();
           bdOf.set(e, await getBackdrop(e.slug, e.number));
-          await new Promise(r => setTimeout(r, 40));
+          await new Promise(r => setTimeout(r, 30));
         }
       };
-      await Promise.all(Array.from({ length: Math.min(6, fresh.length) }, worker));
-    } else if (fresh.length === 1){
-      const e = fresh[0];
-      bdOf.set(e, await getBackdrop(e.slug, e.number));
-    }
-    const blackList = fresh.filter(e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); });
-    const normalList = fresh.filter(e => !blackList.includes(e));
+      await Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker));
+      const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
+      const blackList = batch.filter(isBlack);
+      const normalList = batch.filter(e => !isBlack(e));
+      const markSent = e => {
+        state.pushed[e.slug + '#' + e.number] = 1;
+        const i = state.pending.findIndex(x => x.slug === e.slug && x.number === e.number);
+        if (i >= 0) state.pending.splice(i, 1);
+      };
+      const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
 
-    /* чёрные — всегда отдельной карточкой + закрепом, вне зависимости от размера пачки */
-    for (const e of blackList){
-      const nm = e.gift || e.slug;
-      const em = emojiOf(e.slug, state);
-      const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-      const bd = bdOf.get(e);
-      let cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
-        '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
-      const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-      const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
-        link_preview_options: { url: nftUrl, prefer_large_media: true } });
-      const mid = r.ok && r.result ? r.result.message_id : null;
-      if (!r.ok) console.log('::warning::sendMessage(black) failed: ' + (r.description||'?'));
-      if (mid){
-        try {
-          if (state.blackPin) await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin }).catch(()=>{});
-          const pinned = await pinAndCleanServiceMsg(chat, mid);
-          if (pinned){ state.blackPin = mid; console.log('pinned_black=' + e.slug + '#' + e.number + ' backdrop=' + bd); }
-          else console.log('::warning::pin failed for ' + e.slug + '#' + e.number);
-        } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
-      }
-      await new Promise(r => setTimeout(r, 150));
-    }
-
-    /* остальное (не чёрное) — как раньше: пачкой при >6, иначе по одной */
-    if (normalList.length > 6){
-      const byCol = {};
-      normalList.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
-      const lines = [];
-      const colSlug = {};
-      normalList.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
-      for (const name in byCol){
-        const nums = byCol[name].sort((a,b)=>a-b);
-        const em = emojiOf(colSlug[name] || name, state);
-        lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
-      }
-      await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
-        text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') });
-    } else {
-      for (const e of normalList){
+      /* 1) чёрные — первыми, каждый отдельной карточкой + закреп */
+      for (const e of blackList){
+        if (Date.now() >= deadline) break; /* остаток в очереди — доотправит следующий цикл */
         const nm = e.gift || e.slug;
         const em = emojiOf(e.slug, state);
         const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
         const bd = bdOf.get(e);
-        /* ссылка — ОТДЕЛЬНОЙ голой строкой (не внутри <a>текст</a>), чтобы Telegram
-           сам сгенерил родную анимированную карточку подарка с кнопкой «Показать
-           подарок» (t.me — внутренний линк Telegram, рисует карточку из своих
-           данных сам, без скачивания картинки — надёжно и с анимацией). */
-        let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
-        if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
-        cap += '\n' + nftUrl;
+        let cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
+          '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
         const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
           link_preview_options: { url: nftUrl, prefer_large_media: true } });
-        if (!r.ok) console.log('::warning::sendMessage failed: ' + (r.description||'?'));
-        await new Promise(r => setTimeout(r, 150));
+        if (r.ok){ markSent(e); black++; } else console.log('::warning::sendMessage(black) failed: ' + (r.description||'?'));
+        const mid = r.ok && r.result ? r.result.message_id : null;
+        if (mid){
+          try {
+            if (state.blackPin) await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin }).catch(()=>{});
+            const pinned = await pinAndCleanServiceMsg(chat, mid);
+            if (pinned){ state.blackPin = mid; console.log('pinned_black=' + e.slug + '#' + e.number + ' backdrop=' + bd); }
+            else console.log('::warning::pin failed for ' + e.slug + '#' + e.number);
+          } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
+        }
+        await new Promise(r => setTimeout(r, SEND_GAP));
+      }
+
+      /* 2) обычные: ≤6 по одной, >6 сводкой (компактно при урагане) */
+      if (normalList.length > 6){
+        const byCol = {};
+        normalList.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
+        const lines = [];
+        const colSlug = {};
+        normalList.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
+        for (const name in byCol){
+          const nums = byCol[name].sort((a,b)=>a-b);
+          const em = emojiOf(colSlug[name] || name, state);
+          lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
+        }
+        const r = await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
+          text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') });
+        if (r.ok){ normalList.forEach(markSent); sent += normalList.length; }
+        else console.log('::warning::sendMessage(summary) failed: ' + (r.description||'?'));
+        await new Promise(r => setTimeout(r, SEND_GAP));
+      } else {
+        for (const e of normalList){
+          if (Date.now() >= deadline) break;
+          const nm = e.gift || e.slug;
+          const em = emojiOf(e.slug, state);
+          const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+          const bd = bdOf.get(e);
+          let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
+          if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
+          cap += '\n' + nftUrl;
+          const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+          const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
+            link_preview_options: { url: nftUrl, prefer_large_media: true } });
+          if (r.ok){ markSent(e); sent++; } else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
+          await new Promise(r => setTimeout(r, SEND_GAP));
+        }
       }
     }
-    console.log('push=' + fresh.length + ' black=' + blackList.length);
+    const left = state.pending.length;
+    if (sent || black) console.log('push=' + (sent + black) + ' black=' + black + ' left=' + left);
+    else if (left) console.log('push=0 left=' + left + ' (бюджет времени исчерпан — доотправит следующий цикл)');
   } catch(e){
-    console.log('::warning::push failed: ' + e.message);
+    console.log('::warning::drain failed: ' + e.message);
   }
+  return sent + black;
 }
 function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 /* премиум-стикер на коллекцию: один и тот же символ для одной коллекции всегда,
@@ -692,7 +714,7 @@ async function discoverCollections(registry, state, fragCache, now){
   state.recent.forEach(e => { if (!e.gift) e.gift = (fragCache[e.slug] && fragCache[e.slug].name) || nameBySlug[e.slug] || e.slug; });
   state.recent = state.recent.slice(0, 200);
   if (addedEvents > 0 && process.env.BOT_TOKEN){
-    await pushUpgrades(state.recent.slice(0, addedEvents), state);
+    enqueuePush(state.recent.slice(0, addedEvents), state); /* в очередь мгновенно, скан не ждёт */
   }
 
   /* состояние коллекций (имена — из Fragment, если есть) */
@@ -802,6 +824,13 @@ async function discoverCollections(registry, state, fragCache, now){
     }
     fs.writeFileSync(idxPath, html);
   } catch(e){ console.log('::warning::snapshot write failed: ' + e.message); }
+
+  /* рассылка очереди — ПОСЛЕ скана: детект никогда не ждёт Telegram;
+     бюджет: полный проход 45с, горячая полоса 20с, недоставленное — в очереди
+     (персистится ниже в state.json) и уходит первым следующим циклом */
+  if (process.env.BOT_TOKEN && state.pending && state.pending.length){
+    await drainPending(state, HOT ? 20000 : 45000);
+  }
 
   state.ts = now;
   state.v = 2;

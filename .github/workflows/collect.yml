@@ -67,7 +67,10 @@ jobs:
             NEW=$(echo "$OUT" | grep -oP 'new=\K[0-9]+' | head -1); NEW=${NEW:-0}
             FRAG=$(echo "$OUT" | grep -oP 'frag=\K[0-9]+' | head -1); FRAG=${FRAG:-0}
             FIX=$(echo "$OUT" | grep -oP 'fix=\K[0-9]+' | head -1); FIX=${FIX:-0}
-            TOT=$((NEW + FRAG + FIX))
+            # остаток очереди пуша (>0 = недоставленные карточки ждут следующего
+            # цикла) — коммитим state.json, чтобы смена воркера их не потеряла
+            LEFT=$(echo "$OUT" | grep -oP 'left=\K[0-9]+' | tail -1); LEFT=${LEFT:-0}
+            TOT=$((NEW + FRAG + FIX + LEFT))
             commit_cycle "$OUT" "$TOT"
 
             # ── горячая полоса: только живые коллекции, каждые ~8с → мгновенный детект ──
@@ -75,8 +78,9 @@ jobs:
               [ $(date +%s) -ge $END ] && break
               HOUT=$(HOT=1 node collector/collect.js 2>&1) || true
               HNEW=$(echo "$HOUT" | grep -oP 'new=\K[0-9]+' | head -1); HNEW=${HNEW:-0}
+              HLEFT=$(echo "$HOUT" | grep -oP 'left=\K[0-9]+' | tail -1); HLEFT=${HLEFT:-0}
               echo "$HOUT" | grep -E 'push=|HOT lane' || true
-              commit_cycle "$HOUT" "$HNEW"
+              commit_cycle "$HOUT" "$((HNEW + HLEFT))"
               sleep 5
             done
           done
