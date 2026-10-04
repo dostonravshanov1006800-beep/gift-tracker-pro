@@ -275,11 +275,20 @@ async function pool(items, n, fn){
 
 /* ═══ МГНОВЕННЫЙ ПУШ АПГРЕЙДОВ (как у Trackingonebot): карточка в чат через @lvlonebot ═══ */
 async function tg(method, body){
-  const res = await fetch('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/' + method, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body), signal: AbortSignal.timeout(10000)
-  });
-  return res.json();
+  /* 429 от Telegram (всплеск >1 сообщения/сек в один чат) — раньше просто логировался
+     и карточка терялась без повтора. Теперь уважаем retry_after и повторяем один раз —
+     ни одна карточка не должна пропадать молча из-за кратковременного лимита. */
+  for (let attempt = 0; attempt < 2; attempt++){
+    const res = await fetch('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/' + method, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(10000)
+    });
+    const j = await res.json();
+    if (j.ok || j.error_code !== 429 || attempt === 1) return j;
+    const wait = (j.parameters && j.parameters.retry_after ? j.parameters.retry_after : 2) * 1000 + 150;
+    console.log('::warning::429 от Telegram на ' + method + ', жду ' + wait + 'мс и повторяю');
+    await new Promise(r => setTimeout(r, wait));
+  }
 }
 /* Telegram не может сам скачать картинку по URL с cdn*.telesco.pe (failed to get HTTP URL
    content — у этих ссылок своя привязка к сессии оракула). Поэтому для фото качаем файл
@@ -395,7 +404,8 @@ async function pushUpgrades(events, state){
       let cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + em + ' <b>' + esc_(nm) + '</b> #' + e.number +
         '\n⚡ улучшен\n🎨 Фон: ' + esc_(bd) + ' · <b>РЕДКИЙ</b>\n' + nftUrl;
       const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-      const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+      const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
+        link_preview_options: { url: nftUrl, prefer_large_media: true } });
       const mid = r.ok && r.result ? r.result.message_id : null;
       if (!r.ok) console.log('::warning::sendMessage(black) failed: ' + (r.description||'?'));
       if (mid){
@@ -406,7 +416,7 @@ async function pushUpgrades(events, state){
           else console.log('::warning::pin failed for ' + e.slug + '#' + e.number);
         } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
       }
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 150));
     }
 
     /* остальное (не чёрное) — как раньше: пачкой при >6, иначе по одной */
@@ -437,9 +447,10 @@ async function pushUpgrades(events, state){
         if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
         cap += '\n' + nftUrl;
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-        const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+        const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
+          link_preview_options: { url: nftUrl, prefer_large_media: true } });
         if (!r.ok) console.log('::warning::sendMessage failed: ' + (r.description||'?'));
-        await new Promise(r => setTimeout(r, 60));
+        await new Promise(r => setTimeout(r, 150));
       }
     }
     console.log('push=' + fresh.length + ' black=' + blackList.length);
