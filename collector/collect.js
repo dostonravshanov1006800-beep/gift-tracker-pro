@@ -459,7 +459,8 @@ async function drainPending(state, budgetMs){
       };
       const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
 
-      /* 1) чёрные — первыми, каждый отдельной карточкой + закреп */
+      /* 1) чёрные — первыми (строго по возрастанию внутри чёрных), каждый отдельной карточкой + закреп */
+      blackList.sort((a,b) => a.number - b.number);
       for (const e of blackList){
         if (Date.now() >= deadline) break; /* остаток в очереди — доотправит следующий цикл */
         const nm = e.gift || e.slug;
@@ -484,39 +485,22 @@ async function drainPending(state, budgetMs){
         await new Promise(r => setTimeout(r, SEND_GAP));
       }
 
-      /* 2) обычные: ≤6 по одной, >6 сводкой (компактно при урагане) */
-      if (normalList.length > 6){
-        const byCol = {};
-        normalList.forEach(e => { (byCol[e.gift || e.slug] = byCol[e.gift || e.slug] || []).push(e.number); });
-        const lines = [];
-        const colSlug = {};
-        normalList.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
-        for (const name in byCol){
-          const nums = byCol[name].sort((a,b)=>a-b);
-          const em = emojiOf(colSlug[name] || name, state);
-          lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
-        }
-        const r = await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
-          text: '⚡ <b>Пакет улучшений: ' + normalList.length + '</b>\n' + lines.join('\n') });
-        if (r.ok){ normalList.forEach(markSent); sent += normalList.length; }
-        else console.log('::warning::sendMessage(summary) failed: ' + (r.description||'?'));
+      /* каждая карточка отдельным постом, строго по возрастанию номера — живая анимация t.me/nft, без сводок */
+      normalList.sort((a,b) => a.number - b.number);
+      for (const e of normalList){
+        if (Date.now() >= deadline) break;
+        const nm = e.gift || e.slug;
+        const em = emojiOf(e.slug, state);
+        const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
+        const bd = bdOf.get(e);
+        let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
+        if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
+        cap += '\n' + nftUrl;
+        const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+        const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
+          link_preview_options: { url: nftUrl, prefer_large_media: true } });
+        if (r.ok){ markSent(e); sent++; } else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
         await new Promise(r => setTimeout(r, SEND_GAP));
-      } else {
-        for (const e of normalList){
-          if (Date.now() >= deadline) break;
-          const nm = e.gift || e.slug;
-          const em = emojiOf(e.slug, state);
-          const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-          const bd = bdOf.get(e);
-          let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен';
-          if (bd) cap += '\n🎨 Фон: ' + esc_(bd);
-          cap += '\n' + nftUrl;
-          const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
-          const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
-            link_preview_options: { url: nftUrl, prefer_large_media: true } });
-          if (r.ok){ markSent(e); sent++; } else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
-          await new Promise(r => setTimeout(r, SEND_GAP));
-        }
       }
     }
     const left = state.pending.length;
@@ -559,7 +543,8 @@ async function drainChannel(state, budgetMs){
       };
       const SEND_GAP = 1100;
       const BOT_URL = 'https://t.me/lvlonebot';
-      /* чёрные — первыми, закреп в канале (disable_notification: подписчикам тихо) */
+      /* чёрные — первыми (по возрастанию номера), закреп в канале (disable_notification: подписчикам тихо) */
+      blackList.sort((a,b) => a.number - b.number);
       for (const e of blackList){
         if (Date.now() >= deadline) break;
         const nm = e.gift || e.slug;
@@ -576,13 +561,15 @@ async function drainChannel(state, budgetMs){
         if (mid){
           try {
             if (state.blackPinChan) await tg('unpinChatMessage', { chat_id: chan, message_id: state.blackPinChan }).catch(()=>{});
-            const p = await tg('pinChatMessage', { chat_id: chan, message_id: mid, disable_notification: true });
-            if (p.ok){ state.blackPinChan = mid; console.log('chan_pinned_black=' + e.slug + '#' + e.number); }
+            const pinned = await pinAndCleanServiceMsg(chan, mid);
+            if (pinned){ state.blackPinChan = mid; console.log('chan_pinned_black=' + e.slug + '#' + e.number); }
+            else console.log('::warning::chan pin failed for ' + e.slug + '#' + e.number);
           } catch(e2){ console.log('::warning::chan pin failed: ' + e2.message); }
         }
         await new Promise(r => setTimeout(r, SEND_GAP));
       }
-      /* каждая карточка отдельно: нативная ссылка t.me/nft + живое превью-анимация */
+      /* каждая карточка отдельно, строго по возрастанию номера: нативная ссылка t.me/nft + живое превью-анимация */
+      normalList.sort((a,b) => a.number - b.number);
       for (const e of normalList){
           if (Date.now() >= deadline) break;
           const nm = e.gift || e.slug;
