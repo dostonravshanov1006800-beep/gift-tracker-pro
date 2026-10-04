@@ -506,7 +506,15 @@ html[data-theme="light"] .skel{--skA:rgba(16,19,23,.05);--skB:rgba(16,19,23,.10)
 ::-webkit-scrollbar-track{background:var(--bg)}
 
 </style>
-</head>
+<script>
+/* TEMP PROBE: ошибки и статус фетча в title */
+window.addEventListener('error', function(e){ document.title = 'ERR: ' + (e.message||'') + ' @' + (e.lineno||''); });
+window.__p0 = Date.now();
+fetch('https://raw.githubusercontent.com/jethubvideo-code/gifttracker-bot/main/docs/live.json?t=' + Date.now())
+  .then(function(r){ document.title = 'FETCH-OK:' + r.status + ' t=' + (Date.now()-window.__p0); })
+  .catch(function(e){ document.title = 'FETCH-FAIL: ' + (e && e.message || e) + ' t=' + (Date.now()-window.__p0); });
+setTimeout(function(){ if (document.title.indexOf('Gift Monitor') === 0) document.title = 'NORESULT t=' + (Date.now()-window.__p0); }, 12000);
+</script></head>
 <body>
 <div id="app">
   <div class="hd">
