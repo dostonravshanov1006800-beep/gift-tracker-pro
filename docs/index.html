@@ -76,11 +76,9 @@ img{-webkit-user-drag:none}
 .hbtn.alert svg{stroke:var(--red)}
 
 /* ─── статистика ─── */
-#hero{padding:16px 18px 0;display:flex;gap:10px}
-.heroN{flex:1;background:var(--card);border-radius:18px;padding:12px 6px 11px;text-align:center;box-shadow:var(--sh-md)}
-.heroN .k{font-size:9.5px;font-weight:800;letter-spacing:.06em;color:var(--mut);text-transform:uppercase;margin-bottom:4px}
-.heroN .v{font-weight:900;font-size:19px;line-height:1;letter-spacing:-.01em;color:var(--ink)}
-.heroN .v.accent{color:var(--accent)}
+#hero{padding:14px 18px 0;text-align:center;font-size:13px;font-weight:700;color:var(--mut)}
+#hero .accent{font-weight:900;font-size:15px;color:var(--accent)}
+#hero .hsep{color:var(--faint);margin:0 6px;font-weight:400}
 #fresh{padding:11px 18px 0;font-size:11.5px;color:var(--mut);font-weight:700;display:flex;gap:7px;align-items:center;justify-content:center}
 #fresh i{width:6px;height:6px;border-radius:50%;background:var(--grn);flex:none}
 
@@ -293,6 +291,8 @@ body.no-anim::before{animation:none}
   .aw .sart img,.aw .cimgw img{animation:none;transform:none}
   .aw .sart::after,.aw .cimgw::after{display:none}
 }
+
+.sart,.cimgw{transform:rotate(var(--jr,0deg));filter:brightness(var(--jb,1))}
 </style>
 </head>
 <body>
@@ -306,12 +306,9 @@ body.no-anim::before{animation:none}
   <button class="hbtn" id="btnSet"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.07a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.07a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.07a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.07a1.7 1.7 0 0 0-1.55 1z"/></svg></button>
 </header>
 
-<div id="hero">
-  <div class="heroN"><div class="k">улучшено</div><div class="v accent num" id="roUpg">—</div></div>
-  <div class="heroN"><div class="k">видов</div><div class="v num" id="roKinds">—</div></div>
-  <div class="heroN"><div class="k">за час</div><div class="v num" id="roVel">—</div></div>
-</div>
+<div id="hero"><span id="roUpg" class="num accent">—</span><span class="hsep">·</span>подарков улучшено<span class="hsep">·</span><span id="roVel">—</span><span class="hsep">/ч</span></div>
 <div id="fresh"><i></i><span id="freshTx">загрузка…</span></div>
+<span id="roKinds" style="display:none"></span>
 
 <main>
   <!-- ═══ ЭКРАН 1: УЛУЧШЕННЫЕ ПОДАРКИ ═══ -->
@@ -403,6 +400,9 @@ var toastT = 0;
 function toast(m){ var t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove('on'); }, 2600); }
 function artOf(slug){ return IMG_MIRROR + String(slug).toLowerCase() + '.webp'; }
 function monogram(slug){ var s = String(slug||'at').replace(/[^A-Za-z0-9А-Яа-я]/g,''); return (s.slice(0,2) || 'G').toUpperCase(); }
+
+function jitter(n){ n = Math.abs(Math.round(n||0)); var x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
 var EMPTY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-5 9 5-9 5-9-5z"/><path d="M3 9v8l9 5 9-5V9"/><path d="M12 14v8"/></svg>';
 function addrShort(a){ a = String(a||''); return a.length > 10 ? a.slice(0,4) + '…' + a.slice(-4) : a; }
 
@@ -506,8 +506,9 @@ function renderShowcase(){
     var slug = String(e.slug||'').trim();
     var num = e.counter_issued || e.number || 0;
     var isNew = (now - evTs(e)) < 300;
-    return '<div class="scard aw" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*45, 400) + 'ms;--sd:' + (i%5)*0.9 + 's;--fd:' + (i%7)*0.4 + 's">' +
-      '<div class="sart"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;fb&quot;>' + esc(monogram(slug)) + '</div>\'"></div>' +
+    var jr = (jitter(num) - .5) * 2.2, jb = .97 + jitter(num+7) * .07;
+    return '<div class="scard aw" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*45, 400) + 'ms;--sd:' + (i%5)*0.9 + 's;--fd:' + (i%7)*0.4 + 's;--jr:' + jr.toFixed(1) + 'deg;--jb:' + jb.toFixed(2) + '">' +
+      '<div class="sart"><img decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;fb&quot;>' + esc(monogram(slug)) + '</div>\'"></div>' +
       '<div class="sover"><div class="sname">' + esc(e.gift||slug) + '</div>' +
       '<div class="snum num">#' + fmtNum(num) + '</div>' +
       '<div class="sago">улучшен · ' + esc(evAgo(e)) + '</div></div>' +
@@ -528,7 +529,7 @@ function renderFeed(){
     var slug = String(e.slug||'').trim();
     var num = e.counter_issued || e.number || 0;
     return '<div class="frow" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + '">' +
-      '<div class="fdot"><img loading="lazy" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<span>' + esc(monogram(slug)) + '</span>\'"></div>' +
+      '<div class="fdot"><img decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<span>' + esc(monogram(slug)) + '</span>\'"></div>' +
       '<div class="fbody"><div class="f1">' + esc(e.gift||slug) + ' <span class="fnum num">#' + fmtNum(num) + '</span></div>' +
       '<div class="f2">улучшен до NFT</div></div>' +
       '<span class="ftime" data-k="' + i + '">' + esc(evAgo(e)) + ((now - evTs(e)) < 300 ? ' · NEW' : '') + '</span></div>';
@@ -602,8 +603,9 @@ function renderCatalog(){
     var eta = etaOf(slug, g.issued, g.total);
     var etaChip = fin ? '<b class="l">ЗАВЕРШЕНА</b>' :
       (eta.hours ? (eta.hours < 1 ? '<b>менее часа</b>' : eta.hours <= 6 ? '<b class="m">~' + Math.round(eta.hours) + ' ч</b>' : '<b class="l">~' + (eta.hours/24).toFixed(1) + ' дн</b>') : '<b class="l">мало данных</b>');
-    return '<div class="ccard aw' + (fin ? ' fin' : '') + (hotFresh ? ' hotglow' : '') + '" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*28, 500) + 'ms;--sd:' + (i%5)*0.8 + 's;--fd:' + (i%7)*0.45 + 's">' +
-      '<div class="cimgw"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;cfb&quot;>' + esc(monogram(slug)) + '</div>\'">' +
+    var jr2 = (jitter(g.issued||i) - .5) * 2.2, jb2 = .97 + jitter((g.issued||i)+7) * .07;
+    return '<div class="ccard aw' + (fin ? ' fin' : '') + (hotFresh ? ' hotglow' : '') + '" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*28, 500) + 'ms;--sd:' + (i%5)*0.8 + 's;--fd:' + (i%7)*0.45 + 's;--jr:' + jr2.toFixed(1) + 'deg;--jb:' + jb2.toFixed(2) + '">' +
+      '<div class="cimgw"><img decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;cfb&quot;>' + esc(monogram(slug)) + '</div>\'">' +
       (hot ? '<span class="ctag hot">LIVE</span>' : (fin ? '<span class="ctag fin">FIN</span>' : '')) + '</div>' +
       '<div class="cinfo"><div class="cname">' + esc(g.name||slug) + '</div>' +
       '<div class="cnum num">' + fmtNum(g.issued) + ' / ' + fmtNum(g.total) + '</div>' +
@@ -815,7 +817,13 @@ function updateTimes(){
   }
 }
 
-function renderAll(){ renderStats(); renderScanners(); renderShowcase(); renderFeed(); renderCatalog(); hookAnim(); }
+function renderAll(){
+  var row = $('showRow'); var sl = row ? row.scrollLeft : 0;
+  var pageY = window.scrollY;
+  renderStats(); renderScanners(); renderShowcase(); renderFeed(); renderCatalog(); hookAnim();
+  var row2 = $('showRow'); if (row2) row2.scrollLeft = sl;
+  if (Math.abs(window.scrollY - pageY) > 2) window.scrollTo(0, pageY);
+}
 function refresh(light){
   var FETCHES = light
     ? [jget('status.json'), jget('gifts.json'), null, jget('live.json').catch(function(){ return { items: {} }; })]
@@ -879,7 +887,7 @@ function refresh(light){
 
 refresh(true);
 setTimeout(function(){ refresh(false); }, 2500);
-setInterval(function(){ if (!document.hidden) refresh(true); }, 1000);
+setInterval(function(){ if (!document.hidden) refresh(true); }, 4000);
 setInterval(function(){ refresh(false); }, 180000);
 setInterval(function(){ if (feedEvents.length || giftsData.length) renderStats(); }, 30000);</script>
 
