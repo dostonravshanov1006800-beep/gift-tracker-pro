@@ -270,6 +270,39 @@ async function tg(method, body){
   });
   return res.json();
 }
+/* Telegram не может сам скачать картинку по URL с cdn*.telesco.pe (failed to get HTTP URL
+   content — у этих ссылок своя привязка к сессии оракула). Поэтому для фото качаем файл
+   САМИ (тот же User-Agent, что и у оракула) и грузим его боту как multipart-вложение —
+   так фото гарантированно приходит каждый раз, а не иногда через случайный linkpreview. */
+async function fetchImageBytes(url){
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 10000);
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length ? buf : null;
+  } catch(e){ return null; }
+}
+async function tgSendPhotoFile(chat, imgBuf, caption, kb){
+  const boundary = '----gtp' + Date.now() + Math.random().toString(16).slice(2);
+  const parts = [];
+  const field = (name, val) => parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + name + '"\r\n\r\n' + val + '\r\n'));
+  field('chat_id', chat);
+  field('caption', caption);
+  field('parse_mode', 'HTML');
+  if (kb) field('reply_markup', JSON.stringify(kb));
+  parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="photo"; filename="art.jpg"\r\nContent-Type: image/jpeg\r\n\r\n'));
+  parts.push(imgBuf);
+  parts.push(Buffer.from('\r\n--' + boundary + '--\r\n'));
+  const body = Buffer.concat(parts);
+  const res = await fetch('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/sendPhoto', {
+    method: 'POST', headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+    body, signal: AbortSignal.timeout(15000)
+  });
+  return res.json();
+}
 /* ── АВТОЗАКРЕПКА ЧЁРНОГО ФОНА ──
    Для каждого нового улучшения читаем атрибуты экземпляра (t.me/nft/<slug>-<num>,
    поле Backdrop в og:description). Чёрный фон (Black, Onyx Black…) — редкость:
@@ -329,10 +362,13 @@ async function pushUpgrades(events, state){
         if (black) cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + cap;
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
         let mid = null;
-        if (e.art){
-          const r = await tg('sendPhoto', { chat_id: chat, photo: e.art, caption: cap, parse_mode: 'HTML', reply_markup: kb });
+        /* фото ссылкой Telegram не умеет скачать с этого CDN — качаем сами и шлём файлом */
+        const imgBuf = e.art ? await fetchImageBytes(e.art) : null;
+        if (imgBuf){
+          const r = await tgSendPhotoFile(chat, imgBuf, cap, kb);
           if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
           else {
+            console.log('::warning::sendPhoto file failed: ' + (r.description||'?'));
             const r2 = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
             if (r2.ok && r2.result && r2.result.message_id) mid = r2.result.message_id;
           }
