@@ -21,7 +21,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@11d7b04635ab1e2e1f22d41c37b5ff974992436e  # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - uses: actions/configure-pages@983d7736d9b0ee7ff4b2a1651f601e69ba83e8ef  # v5.0.0
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3.0.1
         with: { path: 'docs' }
