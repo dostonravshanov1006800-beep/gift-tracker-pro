@@ -262,6 +262,37 @@ body.dark .cfb{background:hsl(var(--h) 40% 17%);color:hsl(var(--h) 70% 65%)}
 .empty svg{width:52px;height:52px;stroke:var(--faint);fill:none;stroke-width:1.5;margin-bottom:6px}
 .empty b{font-size:14px;font-weight:800;color:var(--mut)}
 .empty span{font-size:11.5px;color:var(--faint);font-weight:600}
+
+/* ─── живой слой: анимация всех подарков ─── */
+@keyframes floaty{0%,100%{transform:scale(1.12) translateY(0)}50%{transform:scale(1.15) translateY(-7px)}}
+@keyframes shine{0%{transform:translateX(-160%) skewX(-14deg);opacity:0}8%{opacity:1}55%{transform:translateX(280%) skewX(-14deg);opacity:0}100%{transform:translateX(280%) skewX(-14deg);opacity:0}}
+@keyframes glow{0%,100%{opacity:0}50%{opacity:.4}}
+@keyframes aurora{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(6%,-5%) scale(1.15)}66%{transform:translate(-6%,5%) scale(1.08)}}
+body::before{content:'';position:fixed;inset:-22%;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(38% 32% at 20% 25%, hsla(200 90% 60% / .20), transparent 70%),
+    radial-gradient(34% 30% at 78% 18%, hsla(150 80% 55% / .14), transparent 70%),
+    radial-gradient(40% 34% at 55% 82%, hsla(260 90% 70% / .14), transparent 70%);
+  animation:aurora 26s ease-in-out infinite;filter:blur(6px)}
+body.dark::before{opacity:.45}
+.sart img,.cimgw img{will-change:transform}
+.aw .sart img,.aw .cimgw img{animation:floaty 5.6s ease-in-out infinite;animation-play-state:paused;animation-delay:var(--fd,0s)}
+.aw.live .sart img,.aw.live .cimgw img{animation-play-state:running}
+.sart::after,.cimgw::after{content:'';position:absolute;top:0;bottom:0;width:36%;left:0;pointer-events:none;z-index:1;
+  background:linear-gradient(100deg, transparent, hsla(200 100% 96% / .5), transparent);
+  transform:translateX(-160%) skewX(-14deg);opacity:0}
+.aw.live .sart::after,.aw.live .cimgw::after{animation:shine 4.8s ease-in-out infinite;animation-delay:var(--sd,0s)}
+.aw.hotglow::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;
+  background:radial-gradient(80% 70% at 50% 30%, hsla(200 90% 60% / .45), transparent 75%);
+  opacity:0;animation:glow 2.6s ease-in-out infinite}
+body.no-anim .aw .sart img,body.no-anim .aw .cimgw img{animation:none;transform:none}
+body.no-anim .aw .sart::after,body.no-anim .aw .cimgw::after,body.no-anim .aw.hotglow::before{animation:none;opacity:0}
+body.no-anim::before{animation:none}
+@media (prefers-reduced-motion: reduce){
+  body::before{animation:none}
+  .aw .sart img,.aw .cimgw img{animation:none;transform:none}
+  .aw .sart::after,.aw .cimgw::after{display:none}
+}
 </style>
 </head>
 <body>
@@ -355,6 +386,9 @@ function tgReady(fn){
   var n = 0; (function poll(){ if (window.telegram && window.telegram.WebApp) fn(window.telegram.WebApp);
     else if (++n < 40) setTimeout(poll, 120); })();
 }
+var ANIM = localStorage.getItem('gm_anim') !== '0';
+if (ANIM && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches && localStorage.getItem('gm_anim') === null) ANIM = false;
+if (!ANIM) document.body.classList.add('no-anim');
 var tg = null, THEME = localStorage.getItem('gm_theme') || 'auto', SOUND = localStorage.getItem('gm_sound') === '1';
 tgReady(function(T){ tg = T; try { T.ready(); T.expand(); } catch(e){} applyTheme(); try { T.onEvent('themeChanged', applyTheme); } catch(e){} });
 function applyTheme(){
@@ -424,15 +458,15 @@ function switchPane(p){
 })();
 
 function renderStats(){
-  $('roUpg').textContent = fmtNum(statD.detected_total||0);
+  setNum('roUpg', statD.detected_total||0);
 
   /* видов — сколько разных коллекций улучшено (за сутки) */
   var dayAgo = Date.now()/1000 - 86400, kinds = {};
   feedEvents.forEach(function(e){ var t = evTs(e); if (t >= dayAgo) kinds[String(e.slug||'').trim()] = 1; });
-  $('roKinds').textContent = fmtNum(Object.keys(kinds).length);
+  setNum('roKinds', Object.keys(kinds).length);
   var hourAgo = Date.now()/1000 - 3600, vel = 0;
   feedEvents.forEach(function(e){ if (evTs(e) >= hourAgo) vel++; });
-  $('roVel').textContent = String(vel);
+  setNum('roVel', vel);
   var su = Number(statD.updated_unix)||0;
   if (su){
     var mins = Math.max(0, Math.round((Date.now()/1000 - su) / 60));
@@ -472,7 +506,7 @@ function renderShowcase(){
     var slug = String(e.slug||'').trim();
     var num = e.counter_issued || e.number || 0;
     var isNew = (now - evTs(e)) < 300;
-    return '<div class="scard" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*45, 400) + 'ms">' +
+    return '<div class="scard aw" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*45, 400) + 'ms;--sd:' + (i%5)*0.9 + 's;--fd:' + (i%7)*0.4 + 's">' +
       '<div class="sart"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;fb&quot;>' + esc(monogram(slug)) + '</div>\'"></div>' +
       '<div class="sover"><div class="sname">' + esc(e.gift||slug) + '</div>' +
       '<div class="snum num">#' + fmtNum(num) + '</div>' +
@@ -490,18 +524,60 @@ function renderFeed(){
   var evts = feedEvents.slice(0, 15);
   if (!evts.length){ el.innerHTML = '<div class="empty">' + EMPTY_SVG + '<b>Лента пуста</b><span>появится после первых улучшений</span></div>'; return; }
   var now = Date.now()/1000;
-  el.innerHTML = evts.map(function(e){
+  el.innerHTML = evts.map(function(e, i){
     var slug = String(e.slug||'').trim();
     var num = e.counter_issued || e.number || 0;
     return '<div class="frow" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + '">' +
       '<div class="fdot"><img loading="lazy" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<span>' + esc(monogram(slug)) + '</span>\'"></div>' +
       '<div class="fbody"><div class="f1">' + esc(e.gift||slug) + ' <span class="fnum num">#' + fmtNum(num) + '</span></div>' +
       '<div class="f2">улучшен до NFT</div></div>' +
-      '<span class="ftime">' + esc(evAgo(e)) + ((now - evTs(e)) < 300 ? ' · NEW' : '') + '</span></div>';
+      '<span class="ftime" data-k="' + i + '">' + esc(evAgo(e)) + ((now - evTs(e)) < 300 ? ' · NEW' : '') + '</span></div>';
   }).join('');
   Array.prototype.forEach.call(el.querySelectorAll('.frow'), function(r){
     r.addEventListener('click', function(){ haptic(); openColSheet(r.getAttribute('data-slug')); });
   });
+}
+
+
+/* ═══ живая анимация подарков: парение + блики + свечение ═══ */
+var numAnim = {};
+function setNum(id, val){
+  var el = $(id); if (!el) return;
+  var target = Number(val)||0;
+  var cur = numAnim[id] !== undefined ? numAnim[id] : target;
+  if (!ANIM || cur === target){ numAnim[id] = target; el.textContent = fmtNum(target); return; }
+  var t0 = performance.now(), dur = 600, from = cur;
+  (function step(t){
+    var k = Math.min(1, (t - t0) / dur); k = 1 - Math.pow(1 - k, 3);
+    var v = Math.round(from + (target - from) * k);
+    el.textContent = fmtNum(v); numAnim[id] = v;
+    if (k < 1) requestAnimationFrame(step); else numAnim[id] = target;
+  })(t0);
+}
+var animObs = ('IntersectionObserver' in window) ? new IntersectionObserver(function(es){
+  es.forEach(function(en){ en.target.classList.toggle('live', en.isIntersecting && ANIM); });
+}, { rootMargin: '80px' }) : null;
+function hookAnim(){
+  var nodes = document.querySelectorAll('.aw');
+  if (!animObs){
+    for (var i=0;i<nodes.length;i++){ if (ANIM) nodes[i].classList.add('live'); }
+    return;
+  }
+  for (var j=0;j<nodes.length;j++){
+    if (!nodes[j].classList.contains('obs')){ nodes[j].classList.add('obs'); animObs.observe(nodes[j]); }
+    else if (ANIM && isNearViewport(nodes[j])) nodes[j].classList.add('live');
+  }
+}
+function isNearViewport(el){
+  var r = el.getBoundingClientRect();
+  return r.bottom > -160 && r.top < (window.innerHeight + 160);
+}
+function setAnim(on){
+  ANIM = on; localStorage.setItem('gm_anim', on ? '1' : '0');
+  document.body.classList.toggle('no-anim', !on);
+  var nodes = document.querySelectorAll('.aw');
+  for (var i=0;i<nodes.length;i++){ if (!on) nodes[i].classList.remove('live'); }
+  if (on) hookAnim();
 }
 
 var colQuery = '';
@@ -522,10 +598,11 @@ function renderCatalog(){
     var pct = g.total ? Math.min(100, Math.round((g.issued/g.total)*100)) : 0;
     var fin = g.total && g.issued >= g.total;
     var hot = !!hotMap[slug];
+    var hotFresh = hot && (Date.now()/1000 - hotMap[slug]) < 1800;
     var eta = etaOf(slug, g.issued, g.total);
     var etaChip = fin ? '<b class="l">ЗАВЕРШЕНА</b>' :
       (eta.hours ? (eta.hours < 1 ? '<b>менее часа</b>' : eta.hours <= 6 ? '<b class="m">~' + Math.round(eta.hours) + ' ч</b>' : '<b class="l">~' + (eta.hours/24).toFixed(1) + ' дн</b>') : '<b class="l">мало данных</b>');
-    return '<div class="ccard' + (fin ? ' fin' : '') + '" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*28, 500) + 'ms">' +
+    return '<div class="ccard aw' + (fin ? ' fin' : '') + (hotFresh ? ' hotglow' : '') + '" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*28, 500) + 'ms;--sd:' + (i%5)*0.8 + 's;--fd:' + (i%7)*0.45 + 's">' +
       '<div class="cimgw"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;cfb&quot;>' + esc(monogram(slug)) + '</div>\'">' +
       (hot ? '<span class="ctag hot">LIVE</span>' : (fin ? '<span class="ctag fin">FIN</span>' : '')) + '</div>' +
       '<div class="cinfo"><div class="cname">' + esc(g.name||slug) + '</div>' +
@@ -586,6 +663,7 @@ function renderSettings(){
         return '<button data-th="' + v + '" style="padding:8px 12px;border-radius:12px;background:' + (THEME === v ? 'var(--accent)' : 'var(--card2)') + ';color:' + (THEME === v ? '#fff' : 'var(--ink2)') + ';font-size:12px;font-weight:800">' + (v === 'auto' ? 'А' : v === 'dark' ? '◐' : '◑') + '</button>';
       }).join('') +
     '</div></div>' +
+  '<div class="srowS"><div class="st"><b>АНИМАЦИЯ ПОДАРКОВ</b><span>парение, блики и свечение</span></div><div class="sw' + (ANIM ? ' on' : '') + '" id="swAnim"></div></div>' +
   '<div class="srowS"><div class="st"><b>ЗВУК УЛУЧШЕНИЯ</b><span>сигнал при новом апгрейде</span></div><div class="sw' + (SOUND ? ' on' : '') + '" id="swSound"></div></div>' +
   '<div class="srowS"><div class="st"><b>БАННЕРЫ</b><span>всплывающие уведомления</span></div><div class="sw' + (NQ.cfg.banners ? ' on' : '') + '" id="swBan"></div></div>' +
   '<div class="srowS"><div class="st"><b>ВИБРАЦИЯ</b><span>отклик при событии</span></div><div class="sw' + (NQ.cfg.vibro ? ' on' : '') + '" id="swVib"></div></div>' +
@@ -595,6 +673,7 @@ function renderSettings(){
     b.addEventListener('click', function(){ THEME = b.getAttribute('data-th'); localStorage.setItem('gm_theme', THEME); applyTheme(); renderSettings(); });
   });
   $('swSound').addEventListener('click', function(){ SOUND = !SOUND; localStorage.setItem('gm_sound', SOUND ? '1' : '0'); renderSettings(); });
+  $('swAnim').addEventListener('click', function(){ setAnim(!ANIM); renderSettings(); });
   $('swBan').addEventListener('click', function(){ NQ.cfg.banners = !NQ.cfg.banners; nqSave(); renderSettings(); });
   $('swVib').addEventListener('click', function(){ NQ.cfg.vibro = !NQ.cfg.vibro; nqSave(); renderSettings(); });
 }</script>
@@ -693,7 +772,7 @@ nqLoad(); nqBadge(); nqRender();</script>
 <script>
 "use strict";
 /* ═══ refresh-цикл данных (обновляется каждые 6 секунд) ═══ */
-var liveTsMax = 0, firstLoad = true, lastSeenTs = 0;
+var liveTsMax = 0, firstLoad = true, lastSeenTs = 0, lastRaw = '';
 function beep(){
   if (!SOUND) return;
   try {
@@ -722,14 +801,31 @@ function newUpgradeAlert(evts){
   }
   if (evts.length) lastSeenTs = evts[0].mint || 0;
 }
-function renderAll(){ renderStats(); renderScanners(); renderShowcase(); renderFeed(); renderCatalog(); }
+
+function updateTimes(){
+  var su = Number(statD.updated_unix)||0;
+  if (su){
+    var mins = Math.max(0, Math.round((Date.now()/1000 - su) / 60));
+    $('freshTx').textContent = mins < 1 ? 'данные: только что' : 'данные: ' + mins + ' мин назад';
+  }
+  var ts = document.querySelectorAll('.ftime[data-k]');
+  for (var i=0;i<ts.length;i++){
+    var e = feedEvents[Number(ts[i].getAttribute('data-k'))||0];
+    if (e) ts[i].textContent = evAgo(e) + ((Date.now()/1000 - evTs(e)) < 300 ? ' · NEW' : '');
+  }
+}
+
+function renderAll(){ renderStats(); renderScanners(); renderShowcase(); renderFeed(); renderCatalog(); hookAnim(); }
 function refresh(light){
   var FETCHES = light
     ? [jget('status.json'), jget('gifts.json'), null, jget('live.json').catch(function(){ return { items: {} }; })]
     : [jget('status.json'), jget('gifts.json'), jget('history.json').catch(function(){ return { hours: [] }; }), jget('live.json').catch(function(){ return { items: {} }; })];
   Promise.all(FETCHES)
   .then(function(res){
-    if (res[0] && res[0].__stale && feedEvents.length) return;
+    if (res[0] && res[0].__stale && feedEvents.length) { updateTimes(); return; }
+    var raw = JSON.stringify(res[0]) + '|' + JSON.stringify(res[3]||{});
+    if (raw === lastRaw){ updateTimes(); return; }
+    lastRaw = raw;
     statD = res[0] || {};
     histData = (res[2] && res[2].hours) ? res[2].hours : (histData || []);
     giftsData = (res[1] && res[1].gifts) ? res[1].gifts : [];
@@ -783,7 +879,7 @@ function refresh(light){
 
 refresh(true);
 setTimeout(function(){ refresh(false); }, 2500);
-setInterval(function(){ refresh(true); }, 3000);
+setInterval(function(){ if (!document.hidden) refresh(true); }, 1000);
 setInterval(function(){ refresh(false); }, 180000);
 setInterval(function(){ if (feedEvents.length || giftsData.length) renderStats(); }, 30000);</script>
 
