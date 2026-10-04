@@ -1,0 +1,29 @@
+name: Synthetic Monitor (§11)
+# Каждые 30 мин: сайт жив? зеркало полное (121/121)? данные свежие?
+# Провал = красный прогон — видно в Actions без настройки алертов.
+on:
+  schedule:
+    - cron: "13,43 * * * *"
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Site + images + data liveness
+        run: |
+          S="https://dostonravshanov1006800-beep.github.io/gift-tracker-pro"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$S/"); echo "index: $code"; [ "$code" = 200 ]
+          MAN=$(curl -s "$S/images.json")
+          echo "manifest: $(echo "$MAN" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d['images']),'images')")
+          MISS=0; SAMPLE=0
+          for u in $(echo "$MAN" | python3 -c "import json,sys; [print('img/'+v) for v in json.load(sys.stdin)['images'].values()]"); do
+            SAMPLE=$((SAMPLE+1))
+            c=$(curl -s -o /dev/null -w "%{http_code}" "$S/$u"); [ "$c" = 200 ] || { echo "BROKEN: $u -> $c"; MISS=$((MISS+1)); }
+          done
+          echo "checked $SAMPLE images, broken: $MISS"; [ "$MISS" = 0 ]
+          LIVE=$(curl -s "https://raw.githubusercontent.com/jethubvideo-code/gifttracker-bot/main/docs/live.json" | python3 -c "import json,sys,datetime; d=json.load(sys.stdin); ts=datetime.datetime.fromisoformat(d['updated'].replace('Z','+00:00')); age=(datetime.datetime.now(datetime.timezone.utc)-ts).total_seconds(); print(int(age))")
+          echo "live.json age: ${LIVE}s"; [ "$LIVE" -lt 900 ]

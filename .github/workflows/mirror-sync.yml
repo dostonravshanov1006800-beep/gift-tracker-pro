@@ -1,0 +1,33 @@
+name: Mirror Sync (§6.1)
+# Держит зеркало полным: новые коллекции подтягиваются в течение часа.
+# Два слота в час — страховка от пропусков GitHub cron (наблюдалось: паузы 3-7ч).
+on:
+  schedule:
+    - cron: "18 * * * *"
+    - cron: "48 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mirror
+  cancel-in-progress: true
+
+permissions: { contents: write }
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d7b04635ab1e2e1f22d41c37b5ff974992436e  # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.3.0
+        with: { python-version: '3.12' }
+      - run: pip install pillow -q
+      - run: python sync.py
+      - name: Commit (только при новых картинках)
+        run: |
+          git config user.name "img-mirror"
+          git config user.email "mirror@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "NO CHANGES" && exit 0
+          git commit -m "mirror: +new images"
+          git push

@@ -1,0 +1,15 @@
+{
+  "name": "Gift Monitor Ultra",
+  "short_name": "GiftMonitor",
+  "description": "Живой трекер апгрейдов Telegram Gifts — 120 коллекций, свежесть 1-2 минуты",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c0a09",
+  "theme_color": "#0c0a09",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

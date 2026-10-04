@@ -1,0 +1,29 @@
+name: Deploy Pages
+# §8.1(б): собственный workflow-деплой (артефакт) — лимит 10 сборок/час не действует.
+# Триггер только на изменение фронта; данные сайту не нужны (он тянет raw-CDN живьём).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["docs/**", "sync.py"]
+
+permissions: { contents: read, pages: write, id-token: write }
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@11d7b04635ab1e2e1f22d41c37b5ff974992436e  # v4.2.2
+      - uses: actions/configure-pages@983d7736d9b0ee7ff4b2a1651f601e69ba83e8ef  # v5.0.0
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3.0.1
+        with: { path: 'docs' }
+      - id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4.0.5
