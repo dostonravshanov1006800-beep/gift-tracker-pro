@@ -81,7 +81,7 @@ jobs:
               HLEFT=$(echo "$HOUT" | grep -oP 'left=\K[0-9]+' | tail -1); HLEFT=${HLEFT:-0}
               echo "$HOUT" | grep -E 'push=|HOT lane' || true
               commit_cycle "$HOUT" "$((HNEW + HLEFT))"
-              sleep 5
+              sleep 2
             done
           done
           # ── передача смены: запускаем следующего воркера ──
