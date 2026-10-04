@@ -547,6 +547,14 @@ async function drainChannel(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushedChan = state.pushedChan || {};
   let sent = 0, black = 0;
+  /* КАНАЛ = ТОЛЬКО ЧЁРНЫЕ ФОНЫ (бот по-прежнему показывает ВСЁ).
+     Проверенное и не-чёрное убираем из очереди канала сразу: не постим и не держим. */
+  const isBlackQ = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
+  const nonBlack = state.pendingChan.filter(e => e.bdChecked && !isBlackQ(e)).length;
+  if (nonBlack){
+    state.pendingChan = state.pendingChan.filter(e => !(e.bdChecked && !isBlackQ(e)));
+    console.log('chan_blackonly: убрал обычных=' + nonBlack + ' chan_left=' + state.pendingChan.length);
+  }
   const SEND_GAP = 400; /* тот же безопасный темп, см. drainPending */
   const markSent = e => {
     state.pushedChan[e.slug + '#' + e.number] = 1;
@@ -596,8 +604,8 @@ async function drainChannel(state, budgetMs){
   try {
     /* ФАЗА 1: фон уже известен (bdChecked) — шлём немедленно, без запросов.
        Чёрные — первыми (закреп + авточистка служебной надписи), по возрастанию. */
-    let ready = state.pendingChan.filter(e => e.bdChecked);
     const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
+    let ready = state.pendingChan.filter(e => e.bdChecked && isBlackE(e));
     ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
     for (const e of ready){
       if (Date.now() >= deadline) break;
@@ -607,7 +615,7 @@ async function drainChannel(state, budgetMs){
        потолок 6с (см. комментарий в drainPending — тот же баг, тот же фикс). */
     const stale = state.pendingChan.filter(e => !e.bdChecked);
     if (stale.length && Date.now() < deadline){
-      const batch = stale.slice(0, 15);
+      const batch = stale.slice(0, 40);
       const queue = batch.slice();
       const worker = async () => {
         while (queue.length){
@@ -618,11 +626,17 @@ async function drainChannel(state, budgetMs){
         }
       };
       await Promise.race([
-        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
+        Promise.all(Array.from({ length: Math.min(8, batch.length) }, worker)),
         new Promise(r => setTimeout(r, 6000))
       ]);
-      const resolved = batch.filter(e => e.bdChecked);
-      resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
+      /* не-чёрные (фон проверен, обычные) в канал не идут — убираем из очереди канала */
+      const rm = new Set(batch.filter(e => e.bdChecked && !isBlackE(e)).map(e => e.slug + '#' + e.number));
+      if (rm.size){
+        state.pendingChan = state.pendingChan.filter(e => !rm.has(e.slug + '#' + e.number));
+        console.log('chan_blackonly: fallback убрал обычных=' + rm.size + ' chan_left=' + state.pendingChan.length);
+      }
+      const resolved = batch.filter(e => e.bdChecked && isBlackE(e));
+      resolved.sort((a,b) => ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
       for (const e of resolved){
         if (Date.now() >= deadline) break;
         if (await sendOne(e) === false) break;
