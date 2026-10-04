@@ -1,10 +1,10 @@
 name: Collector
-# ═══ ПОСТОЯННЫЙ СКАН-ВОРКЕР ═══
-# Раньше: cron */5 → один цикл → коммит → деплой Pages (итоговая задержка 5-10 мин).
-# Теперь: каждый запущенный job — непрерывный воркер: цикл сканирования (~30-60 c)
-# → коммит при изменениях → пауза 8 c → повтор, до конца окна. Cron */15 с
-# cancel-in-progress — новый запуск подменяет старого воркера, зазор не образуется.
-# Фронтенд тянет данные напрямую с raw CDN (мгновенно после коммита), Pages — только оболочка.
+# ═══ ПОСТОЯННЫЙ СКАН-ВОРКЕР (самоподдерживающаяся цепочка) ═══
+# GitHub-планировщик (cron) на этом репо ни разу не сработал — поэтому воркер
+# в конце своего окна сам запускает себе замену через workflow_dispatch
+# (секрет KEEPALIVE_TOKEN). Cron */15 оставлен как дублирующий путь: если
+# планировщик оживёт, он просто подменит воркера (cancel-in-progress).
+# Фронтенд тянет данные напрямую с raw CDN — коммит виден сайту за секунды.
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -21,18 +21,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 58
     permissions: { contents: write }
+    env:
+      KEEPALIVE_TOKEN: ${{ secrets.KEEPALIVE_TOKEN }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - name: Persistent scan worker
+      - name: Persistent scan worker (50 min + передача смены)
         run: |
           git config user.name "radar-collector"
           git config user.email "collector@radar"
-          # честный last_scan_at требует коммита даже без апгрейдов — heartbeat,
-          # но не чаще 1 раза в 2 минуты при тишине
+          # честный last_scan_at — коммитим heartbeat не реже раза в 45 с
           LAST_HB=0
-          while true; do
+          START=$(date +%s)
+          END=$((START + 50*60))
+          while [ $(date +%s) -lt $END ]; do
             OUT=$(node collector/collect.js 2>&1) || true
             NEW=$(echo "$OUT" | grep -oP 'new=\K[0-9]+' | head -1)
             FRAG=$(echo "$OUT" | grep -oP 'frag=\K[0-9]+' | head -1)
@@ -59,3 +62,10 @@ jobs:
             fi
             sleep 8
           done
+          # ── передача смены: запускаем следующего воркера ──
+          echo "окно закрыто, передаю смену"
+          curl -s -X POST \
+            -H "Authorization: Bearer $KEEPALIVE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/dostonravshanov1006800-beep/gift-tracker-pro/actions/workflows/collect.yml/dispatches \
+            -d '{"ref":"main"}' || true
