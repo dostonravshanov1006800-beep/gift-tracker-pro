@@ -404,7 +404,7 @@ function enqueuePush(events, state){
     for (const e of events){
       const k = e.slug + '#' + e.number;
       if (state.pushed[k] || pendingKeys.has(k)) continue;
-      state.pending.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null });
+      state.pending.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null, bd: e.bd || null, bdChecked: !!e.bdChecked });
       pendingKeys.add(k);
       added++;
     }
@@ -419,7 +419,7 @@ function enqueuePush(events, state){
       for (const e of events){
         const k = e.slug + '#' + e.number;
         if (state.pushedChan[k] || pk2.has(k)) continue;
-        state.pendingChan.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null });
+        state.pendingChan.push({ slug: e.slug, gift: e.gift || null, number: e.number, art: e.art || null, bd: e.bd || null, bdChecked: !!e.bdChecked });
         pk2.add(k);
       }
       const kc = Object.keys(state.pushedChan);
@@ -442,31 +442,35 @@ async function drainPending(state, budgetMs){
   let sent = 0, black = 0;
   try {
     while (state.pending.length && Date.now() < deadline){
-      const batch = state.pending.slice(0, 20);
-      /* фон батча: bdCache (тот же запрос, что и детект) отдаёт большинство
-         мгновенно, прямые запросы — параллельным пулом 6. ЖЁСТКИЙ потолок 6с:
-         при бэклоге после рестарта процесса кэш фонов пуст (он только в памяти),
-         и без потолка пачка из 60 штук съедала ВЕСЬ бюджет отправки на одну
-         только проверку фонов — карточки не уходили совсем (очередь только росла).
-         Теперь то, что не успело определиться за 6с, уходит как обычная карточка
-         (фон неизвестен → не чёрная), остаток бюджета гарантированно идёт на отправку. */
-      const bdOf = new Map();
-      const queue = batch.slice();
-      const worker = async () => {
-        while (queue.length){
-          const e = queue.shift();
-          bdOf.set(e, await getBackdrop(e.slug, e.number));
-          await new Promise(r => setTimeout(r, 30));
-        }
-      };
-      await Promise.race([
-        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
-        new Promise(r => setTimeout(r, 6000))
-      ]);
-      /* bdOf.has(e)===false значит фон НЕ успели проверить (таймаут 6с) —
-         такие остаются в очереди на следующий цикл, а не уходят как «не чёрные»:
-         иначе редкий чёрный фон мог бы проскочить без лейбла и без закрепа. */
-      const resolved = batch.filter(e => bdOf.has(e));
+      const batch = state.pending.slice(0, 30);
+      /* фон уже лежит В САМОМ элементе очереди (e.bd) — захвачен в момент
+         обнаружения, той же страницей, что нашла номер. Доп. запрос нужен
+         только самым старым элементам очереди (до этого фикса), у которых
+         e.bd ещё нет — для них fallback с жёстким потолком 6с, чтобы не
+         повторить баг "весь бюджет на проверку фона, 0 карточек отправлено". */
+      const needFetch = batch.filter(e => !e.bdChecked);
+      if (needFetch.length){
+        const queue = needFetch.slice();
+        const worker = async () => {
+          while (queue.length){
+            const e = queue.shift();
+            e.bd = await getBackdrop(e.slug, e.number);
+            e.bdChecked = true;
+            await new Promise(r => setTimeout(r, 30));
+          }
+        };
+        await Promise.race([
+          Promise.all(Array.from({ length: Math.min(6, needFetch.length) }, worker)),
+          new Promise(r => setTimeout(r, 6000))
+        ]);
+      }
+      /* bdChecked===false значит фон НЕ успели проверить (таймаут 6с на fallback-
+         запросах старых элементов очереди) — такие остаются в очереди на следующий
+         цикл, а не уходят как «не чёрные»: иначе редкий чёрный фон мог бы проскочить
+         без лейбла и без закрепа. bd===null при bdChecked===true — легитимный факт
+         «фона нет в данных», это НЕ таймаут, повторно спрашивать нечего. */
+      const resolved = batch.filter(e => e.bdChecked);
+      const bdOf = new Map(resolved.map(e => [e, e.bd]));
       const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
       const blackList = resolved.filter(isBlack);
       const normalList = resolved.filter(e => !isBlack(e));
@@ -531,24 +535,28 @@ async function drainChannel(state, budgetMs){
   let sent = 0, black = 0;
   try {
     while (state.pendingChan.length && Date.now() < deadline){
-      const batch = state.pendingChan.slice(0, 20);
-      /* тот же потолок 6с, что и в drainPending — см. комментарий там */
-      const bdOf = new Map();
-      const queue = batch.slice();
-      const worker = async () => {
-        while (queue.length){
-          const e = queue.shift();
-          bdOf.set(e, await getBackdrop(e.slug, e.number));
-          await new Promise(r => setTimeout(r, 30));
-        }
-      };
-      await Promise.race([
-        Promise.all(Array.from({ length: Math.min(6, batch.length) }, worker)),
-        new Promise(r => setTimeout(r, 6000))
-      ]);
+      const batch = state.pendingChan.slice(0, 30);
+      /* тот же принцип, что и в drainPending — см. комментарий там */
+      const needFetch = batch.filter(e => !e.bdChecked);
+      if (needFetch.length){
+        const queue = needFetch.slice();
+        const worker = async () => {
+          while (queue.length){
+            const e = queue.shift();
+            e.bd = await getBackdrop(e.slug, e.number);
+            e.bdChecked = true;
+            await new Promise(r => setTimeout(r, 30));
+          }
+        };
+        await Promise.race([
+          Promise.all(Array.from({ length: Math.min(6, needFetch.length) }, worker)),
+          new Promise(r => setTimeout(r, 6000))
+        ]);
+      }
       /* то же правило, что и в drainPending: непроверенные (таймаут) ждут
          следующего цикла, а не отправляются как «не чёрные» наугад. */
-      const resolved = batch.filter(e => bdOf.has(e));
+      const resolved = batch.filter(e => e.bdChecked);
+      const bdOf = new Map(resolved.map(e => [e, e.bd]));
       const isBlack = e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); };
       const blackList = resolved.filter(isBlack);
       const normalList = resolved.filter(e => !isBlack(e));
@@ -799,7 +807,10 @@ async function discoverCollections(registry, state, fragCache, now){
     if (!r.newRange) continue;
     for (let n = r.newRange[0]; n <= r.newRange[1]; n++){
       const artKey = slug + '#' + n;
-      state.recent.unshift({ slug: slug, gift: null, number: n, mint: now, art: artCache.get(artKey) || null });
+      /* фон забираем ЗДЕСЬ, пока он горячий (та же страница, что обнаружила номер) —
+         и кладём в сам объект события. Так он переживёт рестарт процесса и уйдёт
+         в очередь уже готовым, без повторных HTTP-запросов на отправке. */
+      state.recent.unshift({ slug: slug, gift: null, number: n, mint: now, art: artCache.get(artKey) || null, bd: bdCache.get(artKey) || null, bdChecked: true });
       addedEvents++;
     }
   }
