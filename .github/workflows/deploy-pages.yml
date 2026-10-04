@@ -3,9 +3,6 @@ name: Deploy Pages
 # Триггер только на изменение фронта; данные сайту не нужны (он тянет raw-CDN живьём).
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ["docs/**", "sync.py"]
 
 permissions: { contents: read, pages: write, id-token: write }
 
