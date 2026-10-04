@@ -230,6 +230,8 @@ body.dark .cfb{background:hsl(var(--h) 40% 17%);color:hsl(var(--h) 70% 65%)}
 .shbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
 
 /* панель уведомлений */
+#novl{position:fixed;inset:0;z-index:79;background:rgba(0,0,0,.38);opacity:0;visibility:hidden;transition:opacity .25s}
+#novl.on{opacity:1;visibility:visible}
 #npanel{position:fixed;inset:0 0 0 auto;width:min(92vw,380px);z-index:80;background:var(--bg);
   transform:translateX(103%);transition:transform .3s cubic-bezier(.2,.9,.3,1);
   display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.2)}
@@ -360,8 +362,9 @@ body.no-anim::before{animation:none}
 </div>
 
 <!-- панель уведомлений -->
+<div id="novl"></div>
 <aside id="npanel">
-  <div class="nphead"><b>Уведомления</b><button class="btn ghost" id="npClear" style="padding:8px 14px;font-size:11px">очистить</button></div>
+  <div class="nphead"><b>Уведомления</b><div style="display:flex;gap:8px;align-items:center"><button class="btn ghost" id="npClear" style="padding:8px 14px;font-size:11px">очистить</button><button class="hbtn" id="npClose" style="width:34px;height:34px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div></div>
   <div id="nlist"></div>
 </aside>
 
@@ -398,7 +401,8 @@ function haptic(){ try { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOc
 function openLink(u){ try { if (tg && tg.openLink) tg.openLink(u); else window.open(u, '_blank'); } catch(e){ try { window.open(u, '_blank'); } catch(e2){} } }
 var toastT = 0;
 function toast(m){ var t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove('on'); }, 2600); }
-function artOf(slug){ return IMG_MIRROR + String(slug).toLowerCase() + '.webp'; }
+var IMG_V = 'bust7';
+function artOf(slug){ return IMG_MIRROR + String(slug).toLowerCase() + '.webp?v=' + IMG_V; }
 function monogram(slug){ var s = String(slug||'at').replace(/[^A-Za-z0-9А-Яа-я]/g,''); return (s.slice(0,2) || 'G').toUpperCase(); }
 
 function jitter(n){ n = Math.abs(Math.round(n||0)); var x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); }
@@ -760,15 +764,22 @@ function nqRender(){
     });
   });
 }
+function nqPanelClose(){
+  $('npanel').classList.remove('on'); $('novl').classList.remove('on');
+}
 function nqPanelToggle(){
   var p = $('npanel'); if (!p) return;
   var on = p.classList.toggle('on');
+  $('novl').classList.toggle('on', on);
   haptic();
   if (on){ NQ.list.forEach(function(n){ n.read = true; }); NQ.unread = 0; nqSave(); nqBadge(); nqRender(); }
 }
 function nqClear(){ NQ.list = []; NQ.unread = 0; nqSave(); nqBadge(); nqRender(); haptic(); }
 $('btnBell').addEventListener('click', nqPanelToggle);
 $('npClear').addEventListener('click', nqClear);
+$('npClose').addEventListener('click', nqPanelClose);
+$('novl').addEventListener('click', nqPanelClose);
+document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') nqPanelClose(); });
 nqLoad(); nqBadge(); nqRender();</script>
 
 <script>
