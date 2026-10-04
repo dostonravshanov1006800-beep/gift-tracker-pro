@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#f4f2ec">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>GIFT ATELIER — галерея улучшенных подарков</title>
+<title>GIFT ATELIER — улучшенные подарки</title>
 <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="logo.png" type="image/png">
@@ -13,12 +13,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-/* ═══ GIFT ATELIER — светлая галерея дропов, editorial-стиль, с нуля ═══ */
+/* ═══ GIFT ATELIER v3 — два экрана: улучшения + каталог всех подарков ═══ */
 :root{
   --paper:#f4f2ec; --ink:#191712; --ink2:#42403a; --mut:#8a8578; --faint:#b8b2a2;
   --card:#ffffff; --ln:rgba(25,23,18,.08); --ln2:rgba(25,23,18,.16);
   --gold:#c07f19; --gold2:#e8a33d;
-  --grn:#1a9e5c; --amb:#d97706; --red:#e0404f; --vio:#7c5cff;
+  --grn:#1a9e5c; --amb:#d97706; --red:#e0404f;
   --sh-lg:0 24px 48px -12px rgba(25,23,18,.16), 0 4px 12px rgba(25,23,18,.05);
   --sh-md:0 12px 28px -8px rgba(25,23,18,.13), 0 2px 6px rgba(25,23,18,.05);
   --serif:'Playfair Display',Georgia,'Times New Roman',serif;
@@ -54,6 +54,7 @@ img{-webkit-user-drag:none}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.5)}}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 0 hsla(152 70% 38% / .4)}50%{box-shadow:0 0 0 5px hsla(152 70% 38% / 0)}}
 
 /* ─── шапка ─── */
 #hdr{
@@ -88,17 +89,34 @@ img{-webkit-user-drag:none}
 #fresh{padding:10px 20px 0;font-size:11.5px;color:var(--mut);font-weight:600;display:flex;gap:7px;align-items:center}
 #fresh i{width:6px;height:6px;border-radius:50%;background:var(--grn);flex:none}
 
+/* ─── панель 5 сканеров ─── */
+#scanBox{margin:16px 20px 0;background:var(--card);border:1px solid var(--ln);border-radius:22px;
+  padding:14px 16px 10px;box-shadow:var(--sh-md)}
+.scanH{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.scanH b{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.scanH span{font-size:10px;color:var(--mut);font-weight:700;display:flex;align-items:center;gap:5px}
+.srow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--ln)}
+.srow:last-child{border-bottom:none}
+.sdot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--grn);animation:breathe 2.4s infinite}
+.sdot.off{background:var(--faint);animation:none}
+.sinfo{flex:1;min-width:0}
+.sname{font-size:11.5px;font-weight:800}
+.sname i{font-style:normal;color:var(--gold);margin-left:5px;font-family:var(--serif);font-style:italic}
+.stitle{font-size:9.5px;color:var(--mut);font-weight:600;letter-spacing:.03em}
+.sstat{font-size:10px;color:var(--mut);font-weight:700;flex:none;text-align:right;line-height:1.35}
+.sstat b{color:var(--ink);font-weight:800}
+
 /* ─── секции ─── */
 main{padding:0 0 24px}
 .pane{display:none}
 .pane.on{display:block;animation:fadeUp .35s ease}
-.sec{padding:24px 0 0}
+.sec{padding:22px 0 0}
 .sech{display:flex;align-items:baseline;justify-content:space-between;padding:0 20px;margin-bottom:14px}
 .sech h2{font-family:var(--serif);font-weight:900;font-size:23px;letter-spacing:-.01em}
 .sech h2 i{font-style:italic;color:var(--gold)}
 .sech .cnt{font-size:11px;color:var(--mut);font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 
-/* ─── витрина: большие дроп-карты ─── */
+/* ─── витрина: дроп-карты ─── */
 #showRow{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;
   padding:6px 20px 20px;margin:0;scrollbar-width:none}
 #showRow::-webkit-scrollbar{display:none}
@@ -128,9 +146,8 @@ body.dark .sart{background:
 .schip{position:absolute;top:11px;right:11px;background:var(--ink);color:var(--paper);font-size:9.5px;font-weight:800;
   letter-spacing:.12em;padding:6px 10px;border-radius:11px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 .schip.hot{background:var(--red);color:#fff;animation:pulse 1.6s infinite}
-.schip.done{background:var(--grn);color:#fff}
 
-/* ─── лента: editorial-таймлайн ─── */
+/* ─── лента ─── */
 #feedList{padding:0 20px}
 .frow{display:flex;align-items:center;gap:13px;padding:12px 2px;border-bottom:1px solid var(--ln)}
 .frow:last-child{border-bottom:none}
@@ -147,7 +164,7 @@ body.dark .fdot{background:linear-gradient(150deg, hsl(var(--h) 40% 18%), hsl(ca
 .f2{font-size:11px;color:var(--mut);font-weight:600;margin-top:1px}
 .ftime{font-size:10.5px;color:var(--faint);font-weight:700;flex:none;letter-spacing:.03em}
 
-/* ─── коллекции: каталожная сетка ─── */
+/* ─── каталог всех подарков ─── */
 #colGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 20px}
 .ccard{border-radius:24px;background:var(--card);overflow:hidden;position:relative;box-shadow:var(--sh-md);
   border:1px solid var(--ln);animation:rise .45s both;animation-delay:var(--d,0ms)}
@@ -168,7 +185,7 @@ body.dark .cimgw{background:
 .ctag.hot{background:var(--red);color:#fff}
 .ctag.fin{background:var(--grn);color:#fff}
 .cinfo{padding:12px 13px 13px}
-.cname{font-weight:800;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cname{font-weight:800;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cnum{font-size:11.5px;color:var(--mut);margin:3px 0 9px;font-weight:700}
 .cbar{height:6px;border-radius:4px;background:var(--ln);overflow:hidden;margin-bottom:9px}
 .cbar i{display:block;height:100%;border-radius:4px;
@@ -178,31 +195,16 @@ body.dark .cimgw{background:
 .ceta b.m{color:var(--amb)}
 .ceta b.l{color:var(--faint);font-weight:700}
 
-/* ─── цели ─── */
-.gcard{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--ln);
-  border-radius:22px;padding:13px;margin-bottom:12px;box-shadow:var(--sh-md)}
-.gcard.hot{border:1.5px solid var(--red);box-shadow:0 0 0 4px hsla(348 74% 57% / .10), var(--sh-md)}
-.gcard.done{border-color:var(--grn)}
-.gcard.near{border-color:var(--gold2)}
-.gim{width:50px;height:50px;border-radius:16px;flex:none;object-fit:cover;box-shadow:var(--sh-md)}
-.gbody{flex:1;min-width:0}
-.gt1{font-weight:800;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gt1 .num{font-family:var(--serif);font-style:italic;font-weight:900;color:var(--gold)}
-.gt2{font-size:11px;color:var(--mut);margin:2px 0 7px;font-weight:600}
-.gvec{height:6px;border-radius:4px;background:var(--ln);overflow:hidden}
-.gvec i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg, var(--gold2), var(--gold))}
-.gchip{flex:none;font-size:9px;font-weight:800;letter-spacing:.1em;padding:6px 10px;border-radius:11px;
-  background:var(--ln);color:var(--mut);text-transform:uppercase}
-.gchip.near{background:hsla(36 82% 45% / .14);color:var(--amb)}
-.gchip.hot{background:hsla(348 74% 55% / .14);color:var(--red)}
-.gchip.done{background:hsla(152 70% 38% / .13);color:var(--grn)}
-.gact{display:flex;flex-direction:column;gap:7px;flex:none}
-.gact button{width:32px;height:32px;border-radius:11px;background:var(--ln);font-size:13px;font-weight:700;
-  display:flex;align-items:center;justify-content:center;color:var(--ink2)}
-.gact .zap{background:var(--ink);color:var(--paper);box-shadow:var(--sh-md)}
-body.dark .gact .zap{color:#fff}
-.addrow{display:grid;grid-template-columns:1.3fr .7fr auto;gap:9px;margin-bottom:9px}
-.addrow2{display:grid;grid-template-columns:1fr 1.1fr;gap:9px;margin-bottom:9px}
+/* ─── настройки ─── */
+.srowS{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 2px;border-bottom:1px solid var(--ln)}
+.srowS .st b{font-size:13px;font-weight:800;letter-spacing:.03em;display:block}
+.srowS .st span{font-size:11px;color:var(--mut);font-weight:600}
+.sw{width:50px;height:29px;border-radius:16px;background:var(--ln);position:relative;transition:.25s;flex:none}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);transition:.25s}
+.sw.on{background:linear-gradient(120deg, var(--gold2), var(--gold))}
+.sw.on::after{left:24px}
+.note{font-size:11.5px;color:var(--mut);line-height:1.7;padding-top:16px;font-weight:500}
 .btn{background:var(--ink);color:var(--paper);font-weight:800;font-size:13.5px;border-radius:16px;padding:13px 18px;
   box-shadow:var(--sh-md);letter-spacing:.01em}
 body.dark .btn{color:#fff}
@@ -210,23 +212,12 @@ body.dark .btn{color:#fff}
 .btn.gold{background:linear-gradient(120deg, var(--gold2), var(--gold));color:#fff}
 .btn.ghost{background:var(--card);border:1.5px solid var(--ln2);box-shadow:none;color:var(--ink)}
 
-/* ─── настройки ─── */
-.srow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 2px;border-bottom:1px solid var(--ln)}
-.srow .st b{font-size:13px;font-weight:800;letter-spacing:.03em;display:block}
-.srow .st span{font-size:11px;color:var(--mut);font-weight:600}
-.sw{width:50px;height:29px;border-radius:16px;background:var(--ln);position:relative;transition:.25s;flex:none}
-.sw::after{content:'';position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;background:#fff;
-  box-shadow:0 2px 8px rgba(0,0,0,.25);transition:.25s}
-.sw.on{background:linear-gradient(120deg, var(--gold2), var(--gold))}
-.sw.on::after{left:24px}
-.note{font-size:11.5px;color:var(--mut);line-height:1.7;padding-top:16px;font-weight:500}
-
-/* ─── нижняя навигация: плавающая капсула ─── */
+/* ─── навигация: плавающая капсула ─── */
 #tabs{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:45;display:flex;gap:2px;
   background:color-mix(in srgb, var(--card) 92%, transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   border:1px solid var(--ln2);border-radius:24px;padding:7px;box-shadow:var(--sh-lg);max-width:calc(100vw - 24px)}
-.tbtn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 17px 7px;color:var(--faint);
-  font-size:9px;font-weight:800;letter-spacing:.08em;border-radius:17px;transition:.2s}
+.tbtn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 26px 7px;color:var(--faint);
+  font-size:9.5px;font-weight:800;letter-spacing:.08em;border-radius:17px;transition:.2s}
 .tbtn svg{width:21px;height:21px}
 .tbtn.on{background:var(--ink);color:var(--paper);box-shadow:0 6px 16px rgba(0,0,0,.25)}
 body.dark .tbtn.on{color:#fff}
@@ -252,7 +243,6 @@ body.dark .shimgw{background:linear-gradient(170deg, hsl(var(--h) 40% 16%), hsl(
 .shtitle{flex:1;min-width:0;padding-top:4px}
 .shtitle h3{font-family:var(--serif);font-weight:900;font-size:24px;line-height:1.1;margin-bottom:6px}
 .bignum{font-family:var(--serif);font-style:italic;font-weight:900;font-size:15px;color:var(--gold)}
-.icobtn{flex:none}
 .meter{height:10px;border-radius:6px;background:var(--ln);overflow:hidden;margin:16px 0 14px}
 .meter i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg, var(--gold2), var(--gold));
   box-shadow:0 2px 10px hsla(36 82% 45% / .4)}
@@ -274,10 +264,7 @@ body.dark .shimgw{background:linear-gradient(170deg, hsl(var(--h) 40% 16%), hsl(
 #nlist{flex:1;overflow-y:auto;padding:6px 20px}
 .ntf{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--ln);align-items:flex-start}
 .ntf .ni{width:40px;height:40px;border-radius:14px;flex:none;display:flex;align-items:center;justify-content:center;font-size:17px}
-.ntf.near .ni{background:hsla(36 82% 45% / .16)}
-.ntf.hot .ni{background:hsla(348 74% 55% / .15)}
-.ntf.done .ni{background:hsla(152 70% 38% / .14)}
-.ntf.upg .ni{background:hsla(252 100% 76% / .14)}
+.ntf.upg .ni{background:hsla(36 82% 45% / .16)}
 .ntf .nb{flex:1;min-width:0}
 .ntf .nt{font-weight:800;font-size:13px}
 .ntf .nm{font-size:11.5px;color:var(--mut);margin-top:2px;font-weight:600}
@@ -287,10 +274,7 @@ body.dark .shimgw{background:linear-gradient(170deg, hsl(var(--h) 40% 16%), hsl(
   animation:fadeUp .32s ease;box-shadow:var(--sh-lg);border:1px solid var(--ln2)}
 .nban.out{opacity:0;transform:translateY(-14px);transition:.3s}
 .nban .ni{width:38px;height:38px;border-radius:13px;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px}
-.nban.near .ni{background:hsla(36 82% 45% / .16)}
-.nban.hot .ni{background:hsla(348 74% 55% / .15)}
-.nban.done .ni{background:hsla(152 70% 38% / .14)}
-.nban.upg .ni{background:hsla(252 100% 76% / .14)}
+.nban.upg .ni{background:hsla(36 82% 45% / .16)}
 .nban .nt{font-weight:800;font-size:12.5px}
 .nban .nm{font-size:11px;color:var(--mut);font-weight:600;margin-top:1px}
 
@@ -316,15 +300,19 @@ body.dark #toast{color:#fff}
 <div id="hero">
   <div class="heroN"><div class="k">улучшено</div><div class="v gold num" id="roUpg">—</div></div>
   <div class="heroDiv"></div>
-  <div class="heroN"><div class="k">за час</div><div class="v num" id="roVel">—</div></div>
+  <div class="heroN"><div class="k">видов</div><div class="v num" id="roKinds">—</div></div>
   <div class="heroDiv"></div>
-  <div class="heroN"><div class="k">коллекций</div><div class="v num" id="roNet">—</div></div>
+  <div class="heroN"><div class="k">за час</div><div class="v num" id="roVel">—</div></div>
 </div>
 <div id="fresh"><i></i><span id="freshTx">загрузка…</span></div>
 
 <main>
-  <!-- ═══ ВИТРИНА ═══ -->
-  <section class="pane on" id="p-gifts">
+  <!-- ═══ ЭКРАН 1: УЛУЧШЕННЫЕ ПОДАРКИ ═══ -->
+  <section class="pane on" id="p-live">
+    <div id="scanBox">
+      <div class="scanH"><b>Сканеры · 5 систем</b><span><i id="ldot" style="width:6px;height:6px"></i><span id="scanSum"></span></span></div>
+      <div id="scanList"></div>
+    </div>
     <div class="sec"><div class="sech"><h2>Свежие <i>улучшения</i></h2><span class="cnt" id="shCnt"></span></div>
       <div id="showRow"></div>
     </div>
@@ -333,54 +321,20 @@ body.dark #toast{color:#fff}
     </div>
   </section>
 
-  <!-- ═══ КОЛЛЕКЦИИ ═══ -->
-  <section class="pane" id="p-collections">
-    <div class="sec"><div class="sech"><h2>Каталог <i>коллекций</i></h2><span class="cnt" id="colCnt"></span></div>
+  <!-- ═══ ЭКРАН 2: ВСЕ ПОДАРКИ ═══ -->
+  <section class="pane" id="p-all">
+    <div class="sec"><div class="sech"><h2>Все <i>подарки</i></h2><span class="cnt" id="colCnt"></span></div>
       <div style="padding:0 20px">
-        <input id="colSearch" placeholder="Найти коллекцию…" autocomplete="off">
+        <input id="colSearch" placeholder="Найти подарок…" autocomplete="off">
       </div>
       <div id="colGrid" style="margin-top:14px"></div>
-    </div>
-  </section>
-
-  <!-- ═══ ЦЕЛИ ═══ -->
-  <section class="pane" id="p-goals">
-    <div class="sec"><div class="sech"><h2>Мои <i>цели</i></h2><span class="cnt" id="glCnt"></span></div>
-      <div style="padding:0 20px">
-        <div class="addrow2">
-          <input id="tgtName" list="dl" placeholder="Коллекция" autocomplete="off">
-          <input id="tgtNum" type="number" inputmode="numeric" placeholder="№ цели" min="1">
-        </div>
-        <div class="addrow">
-          <input id="tgtStars" type="number" inputmode="numeric" placeholder="макс ★" min="0">
-          <button class="btn gold" id="tgtAdd" style="grid-column:span 2">Взять на цель</button>
-        </div>
-        <datalist id="dl"></datalist>
-        <div id="goalList"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ ЕЩЁ ═══ -->
-  <section class="pane" id="p-info">
-    <div class="sec"><div class="sech"><h2>Настройки <i>и инфо</i></h2></div>
-      <div style="padding:0 20px">
-        <div id="setRows"></div>
-        <div class="note">
-          GIFT ATELIER · собственный сборщик данных каждые 5 минут напрямую с Telegram.<br>
-          Витрина, лента, цели и уведомления работают на своих данных без внешних сервисов.<br>
-          Арты подарков — локальное зеркало в этом же домене (121 WebP).
-        </div>
-      </div>
     </div>
   </section>
 </main>
 
 <nav id="tabs">
-  <button class="tbtn on" data-p="gifts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>ВИТРИНА</button>
-  <button class="tbtn" data-p="collections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>КОЛЛЕКЦИИ</button>
-  <button class="tbtn" data-p="goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>ЦЕЛИ</button>
-  <button class="tbtn" data-p="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.07a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.07a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.07a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.07a1.7 1.7 0 0 0-1.55 1z"/></svg>ЕЩЁ</button>
+  <button class="tbtn on" data-p="live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>УЛУЧШЕННЫЕ</button>
+  <button class="tbtn" data-p="all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>ВСЕ ПОДАРКИ</button>
 </nav>
 
 <!-- шит коллекции -->
@@ -433,15 +387,10 @@ function toast(m){ var t = $('toast'); t.textContent = m; t.classList.add('on');
 function artOf(slug){ return IMG_MIRROR + String(slug).toLowerCase() + '.webp'; }
 function monogram(slug){ var s = String(slug||'at').replace(/[^A-Za-z0-9А-Яа-я]/g,''); return (s.slice(0,2) || 'G').toUpperCase(); }
 function addrShort(a){ a = String(a||''); return a.length > 10 ? a.slice(0,4) + '…' + a.slice(-4) : a; }
-function usdOf(f){ return ''; }
 
 /* ═══ состояние ═══ */
-var giftsData = [], statD = {}, histData = [], floorsData = { floors: {} }, imagesData = {};
-var feedEvents = [], hotMap = {}, lastUpgMap = {}, favSet = null;
-function favLoad(){ try { favSet = {}; (JSON.parse(localStorage.getItem('gm_favs') || '[]') || []).forEach(function(s){ favSet[s] = 1; }); } catch(e){ favSet = favSet || {}; } return favSet; }
-function favSave(){ try { localStorage.setItem('gm_favs', JSON.stringify(Object.keys(favSet))); } catch(e){} }
-function isFav(slug){ if (!favSet) favLoad(); return !!favSet[String(slug).trim()]; }
-function toggleFav(slug){ if (!favSet) favLoad(); slug = String(slug).trim(); if (favSet[slug]) delete favSet[slug]; else favSet[slug] = 1; favSave(); }
+var giftsData = [], statD = {}, histData = [], scannerData = [];
+var feedEvents = [], hotMap = {};
 function findBySlug(slug){ for (var i=0;i<giftsData.length;i++){ if (String(giftsData[i].slug||giftsData[i].name).trim() === slug) return giftsData[i]; } return null; }
 function evTs(e){ return Number(e.mint) || Math.floor(Number(new Date(e.ts||e.time||Date.now()))/1000) || 0; }
 function evAgo(e){ var s = Math.max(0, Math.floor(Date.now()/1000) - evTs(e));
@@ -450,7 +399,6 @@ function etaOf(slug, issued, total){
   if (!total || issued >= total) return { done: true };
   var own = findBySlug(slug);
   if (own && own.rate) return { rate: own.rate, hours: (total - issued) / own.rate, own: true };
-  var now = Date.now()/1000;
   for (var i = histData.length - 1; i >= 1; i--){
     var h1 = histData[i], h0 = histData[i-1];
     var a = h0.issued && h0.issued[slug], b = h1.issued && h1.issued[slug];
@@ -461,14 +409,6 @@ function etaOf(slug, issued, total){
     }
   }
   return {};
-}
-function etaTxt(slug, issued, total){
-  var e = etaOf(slug, issued, total);
-  if (e.done) return 'выпущено полностью';
-  if (!e.hours) return 'мало данных';
-  if (e.hours < 1) return 'менее часа';
-  if (e.hours < 48) return '~' + Math.round(e.hours) + ' ч';
-  return '~' + (e.hours/24).toFixed(1) + ' дн';
 }
 function jget(f){
   var bust = (f.indexOf('?')>=0?'&':'?') + 't=' + Date.now();
@@ -489,7 +429,7 @@ function jget(f){
 function switchPane(p){
   var btns = document.querySelectorAll('.tbtn');
   for (var i=0;i<btns.length;i++) btns[i].classList.toggle('on', btns[i].getAttribute('data-p') === p);
-  var panes = ['gifts','collections','goals','info'];
+  var panes = ['live','all'];
   for (var j=0;j<panes.length;j++){ var el = $('p-'+panes[j]); if (el) el.classList.toggle('on', panes[j] === p); }
   window.scrollTo(0, 0);
 }
@@ -502,7 +442,11 @@ function switchPane(p){
 
 function renderStats(){
   $('roUpg').textContent = fmtNum(statD.detected_total||0);
-  $('roNet').textContent = fmtNum(giftsData.length);
+
+  /* видов — сколько разных коллекций улучшено (за сутки) */
+  var dayAgo = Date.now()/1000 - 86400, kinds = {};
+  feedEvents.forEach(function(e){ var t = evTs(e); if (t >= dayAgo) kinds[String(e.slug||'').trim()] = 1; });
+  $('roKinds').textContent = fmtNum(Object.keys(kinds).length);
   var hourAgo = Date.now()/1000 - 3600, vel = 0;
   feedEvents.forEach(function(e){ if (evTs(e) >= hourAgo) vel++; });
   $('roVel').textContent = String(vel);
@@ -511,14 +455,35 @@ function renderStats(){
     var mins = Math.max(0, Math.round((Date.now()/1000 - su) / 60));
     $('freshTx').textContent = mins < 1 ? 'данные: только что' : 'данные: ' + mins + ' мин назад';
   }
-  $('upd').textContent = 'живой канал · ' + (feedEvents.length ? feedEvents.length + ' событий' : 'эфир чист');
+  $('upd').textContent = 'живой канал · 5 сканеров';
+}
+
+/* ─── панель 5 сканеров ─── */
+function renderScanners(){
+  var el = $('scanList'); if (!el) return;
+  var list = scannerData;
+  if (!list || !list.length){
+    el.innerHTML = ['S1','S2','S3','S4','S5'].map(function(i){
+      return '<div class="srow"><span class="sdot off"></span><div class="sinfo"><div class="sname">' + i + '</div></div><div class="sstat">ожидание</div></div>';
+    }).join('');
+    return;
+  }
+  var reqSum = 0;
+  list.forEach(function(s){ reqSum += Number(s.req)||0; });
+  $('scanSum').textContent = fmtNum(reqSum) + ' запросов/цикл';
+  el.innerHTML = list.map(function(s){
+    return '<div class="srow"><span class="sdot' + (s.ok ? '' : ' off') + '"></span>' +
+      '<div class="sinfo"><div class="sname">' + esc(s.id) + ' ' + esc(s.name) + '<i>сканер</i></div>' +
+      '<div class="stitle">' + esc(s.title || '') + '</div></div>' +
+      '<div class="sstat">цикл: <b>' + fmtNum(s.req) + '</b> зап · <b>' + fmtNum(s.found) + '</b> найдено<br>всего: ' + fmtNum(s.req_total||0) + ' зап</div></div>';
+  }).join('');
 }
 
 function renderShowcase(){
   var row = $('showRow'); if (!row) return;
   var evts = feedEvents.slice(0, 20);
   $('shCnt').textContent = evts.length ? evts.length + ' новых' : '';
-  if (!evts.length){ row.innerHTML = '<div class="empty" style="min-width:250px">витрина наполняется — сборщик ловит улучшения с первоисточника…</div>'; return; }
+  if (!evts.length){ row.innerHTML = '<div class="empty" style="min-width:250px">витрина наполняется — 5 сканеров ловят улучшения с первоисточника…</div>'; return; }
   var now = Date.now()/1000;
   row.innerHTML = evts.map(function(e, i){
     var slug = String(e.slug||'').trim();
@@ -548,7 +513,7 @@ function renderFeed(){
     return '<div class="frow" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + '">' +
       '<div class="fdot"><img loading="lazy" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<span>' + esc(monogram(slug)) + '</span>\'"></div>' +
       '<div class="fbody"><div class="f1">' + esc(e.gift||slug) + ' <span class="fnum num">#' + fmtNum(num) + '</span></div>' +
-      '<div class="f2">улучшен до NFT' + (e.owner ? ' · ' + esc(addrShort(e.owner)) : '') + '</div></div>' +
+      '<div class="f2">улучшен до NFT</div></div>' +
       '<span class="ftime">' + esc(evAgo(e)) + ((now - evTs(e)) < 300 ? ' · NEW' : '') + '</span></div>';
   }).join('');
   Array.prototype.forEach.call(el.querySelectorAll('.frow'), function(r){
@@ -557,7 +522,7 @@ function renderFeed(){
 }
 
 var colQuery = '';
-function renderCollections(){
+function renderCatalog(){
   var el = $('colGrid'); if (!el) return;
   var q = colQuery.toLowerCase();
   var list = giftsData.filter(function(g){ return !q || String(g.name||g.slug).toLowerCase().indexOf(q) >= 0; });
@@ -580,7 +545,7 @@ function renderCollections(){
     return '<div class="ccard' + (fin ? ' fin' : '') + '" data-slug="' + esc(slug) + '" style="--h:' + hueOf(slug) + ';--d:' + Math.min(i*28, 500) + 'ms">' +
       '<div class="cimgw"><img loading="lazy" decoding="async" src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;cfb&quot;>' + esc(monogram(slug)) + '</div>\'">' +
       (hot ? '<span class="ctag hot">LIVE</span>' : (fin ? '<span class="ctag fin">FIN</span>' : '')) + '</div>' +
-      '<div class="cinfo"><div class="cname">' + esc(g.name||slug) + (isFav(slug) ? ' ♥' : '') + '</div>' +
+      '<div class="cinfo"><div class="cname">' + esc(g.name||slug) + '</div>' +
       '<div class="cnum num">' + fmtNum(g.issued) + ' / ' + fmtNum(g.total) + '</div>' +
       '<div class="cbar"><i style="width:' + pct + '%"></i></div>' +
       '<div class="ceta"><span>' + pct + '%</span>' + etaChip + '</div></div></div>';
@@ -588,78 +553,15 @@ function renderCollections(){
   Array.prototype.forEach.call(el.querySelectorAll('.ccard'), function(c){
     c.addEventListener('click', function(){ haptic(); openColSheet(c.getAttribute('data-slug')); });
   });
-  var dl = $('dl'), opts = '';
-  giftsData.forEach(function(g){ opts += '<option value="' + esc(g.name||g.slug) + '">'; });
-  dl.innerHTML = opts;
 }
 (function(){
   var s = $('colSearch'), t = 0;
-  s.addEventListener('input', function(){ clearTimeout(t); t = setTimeout(function(){ colQuery = s.value; renderCollections(); }, 180); });
+  s.addEventListener('input', function(){ clearTimeout(t); t = setTimeout(function(){ colQuery = s.value; renderCatalog(); }, 180); });
 })();
 </script>
 
 <script>
 "use strict";
-/* ═══ цели ═══ */
-function tgtLoad(){ try { return JSON.parse(localStorage.getItem('radar_targets') || '[]') || []; } catch(e){ return []; } }
-function tgtSave(list){ try { localStorage.setItem('radar_targets', JSON.stringify(list)); } catch(e){} }
-function tgtState(dist){ if (dist <= 0) return 'done'; if (dist <= 3) return 'hot'; if (dist <= 10) return 'near'; return 'watch'; }
-function tgtStateRu(st){ return st === 'done' ? 'ГОТОВО' : st === 'hot' ? 'ГОРИТ' : st === 'near' ? 'БЛИЗКО' : 'СЛЕДИМ'; }
-function renderGoals(){
-  var el = $('goalList'); if (!el) return;
-  var list = tgtLoad();
-  $('glCnt').textContent = list.length ? list.length + ' на цели' : '';
-  if (!list.length){ el.innerHTML = '<div class="empty">целей нет — задай номер подарка, приложение проследит за ним и уведомит, когда он появится</div>'; return; }
-  el.innerHTML = list.map(function(t, idx){
-    var g = findBySlug(t.slug);
-    var issued = g ? (Number(g.issued)||0) : (Number(t.i)||0);
-    var total = g ? (Number(g.total)||0) : 0;
-    var st = t.st || tgtState(Number(t.num) - issued);
-    var vec = total ? Math.min(100, Math.round(issued / total * 100)) : Math.min(100, Math.round(issued / Math.max(1, Number(t.num)) * 100));
-    var dist = Number(t.num) - issued;
-    return '<div class="gcard ' + st + '" style="--h:' + hueOf(t.slug) + '">' +
-      '<img class="gim" loading="lazy" src="' + esc(artOf(t.slug)) + '" onerror="this.outerHTML=\'<div class=&quot;gim&quot; style=&quot;display:flex;align-items:center;justify-content:center;font-weight:800&quot;>' + esc(monogram(t.slug)) + '</div>\'">' +
-      '<div class="gbody"><div class="gt1">' + esc(g ? g.name : t.slug) + ' <span class="num">#' + fmtNum(t.num) + '</span></div>' +
-      '<div class="gt2">выпущено №' + fmtNum(issued) + (t.stars ? ' · лимит ' + t.stars + '★' : '') + '</div>' +
-      '<div class="gvec"><i style="width:' + vec + '%"></i></div></div>' +
-      '<span class="gchip ' + st + '">' + tgtStateRu(st) + (st !== 'done' && dist > 0 ? ' −' + dist : '') + '</span>' +
-      '<div class="gact"><button class="zap" data-t="' + idx + '">⚡</button><button data-d="' + idx + '">✕</button></div></div>';
-  }).join('');
-  Array.prototype.forEach.call(el.querySelectorAll('[data-d]'), function(b){
-    b.addEventListener('click', function(){ var l = tgtLoad(); l.splice(Number(b.getAttribute('data-d')),1); tgtSave(l); renderGoals(); haptic(); });
-  });
-  Array.prototype.forEach.call(el.querySelectorAll('.zap'), function(b){
-    b.addEventListener('click', function(){
-      var l = tgtLoad(); var t = l[Number(b.getAttribute('data-t'))]; if (!t) return;
-      var link = 'https://t.me/lvlonebot?start=add_' + encodeURIComponent(t.slug) + '_' + t.num + (t.stars ? '_' + t.stars : '');
-      haptic(); openLink(link);
-    });
-  });
-}
-function tgtAdd(){
-  var nameEl = $('tgtName'), numEl = $('tgtNum'), stEl = $('tgtStars');
-  var name = String(nameEl.value||'').trim().toLowerCase();
-  var num = parseInt(numEl.value, 10);
-  var stars = stEl ? parseInt(stEl.value, 10) : 0;
-  if (!name || !num || num < 1){ toast('введи коллекцию и номер цели'); return; }
-  var g = null;
-  for (var i=0;i<giftsData.length;i++){
-    var s = String(giftsData[i].slug||giftsData[i].name||'').trim().toLowerCase();
-    if (s === name || String(giftsData[i].name||'').toLowerCase() === name){ g = giftsData[i]; break; }
-  }
-  if (!g){ toast('коллекция «' + esc(name) + '» не найдена'); return; }
-  var slug = String(g.slug||g.name).trim();
-  var list = tgtLoad();
-  for (var j=0;j<list.length;j++) if (list[j].slug === slug && list[j].num === num){ toast('цель уже есть'); return; }
-  var issued = Number(g.issued)||0;
-  list.push({ slug: slug, num: num, stars: stars||0, st: tgtState(num-issued), i: issued, ts: Date.now() });
-  tgtSave(list);
-  nameEl.value=''; numEl.value=''; if (stEl) stEl.value='';
-  renderGoals(); haptic();
-  toast(tgtState(num-issued) === 'done' ? 'номер уже выпущен — цель закрыта' : 'цель #' + fmtNum(num) + ' взята');
-}
-$('tgtAdd').addEventListener('click', tgtAdd);
-
 /* ═══ шит коллекции ═══ */
 function openColSheet(slug){
   var g = findBySlug(slug); if (!g) return;
@@ -670,8 +572,7 @@ function openColSheet(slug){
   var html =
   '<div class="shgrid" style="--h:' + hueOf(slug) + '">' +
     '<div class="shimgw"><img src="' + esc(artOf(slug)) + '" onerror="this.outerHTML=\'<div class=&quot;shfb&quot;>' + esc(monogram(slug)) + '</div>\'"></div>' +
-    '<div class="shtitle"><h3>' + esc(g.name||slug) + '</h3><div class="bignum num">' + fmtNum(g.issued) + ' / ' + fmtNum(g.total) + ' · ' + pct + '%</div>' +
-    '<button class="icobtn hbtn" id="shFav" style="margin-top:10px;width:36px;height:36px;font-size:13px;border:none;box-shadow:none;background:var(--ln)">' + (isFav(slug) ? '♥' : '♡') + '</button></div>' +
+    '<div class="shtitle"><h3>' + esc(g.name||slug) + '</h3><div class="bignum num">' + fmtNum(g.issued) + ' / ' + fmtNum(g.total) + ' · ' + pct + '%</div></div>' +
   '</div>' +
   '<div class="meter"><i style="width:' + pct + '%"></i></div>' +
   '<div class="kvgrid">' +
@@ -680,23 +581,15 @@ function openColSheet(slug){
   '</div>' +
   (recent.length ? '<div class="lbl" style="margin:14px 0 2px">последние улучшения</div><div class="minilist">' +
     recent.map(function(e){
-      return '<div class="mr"><b class="num">#' + fmtNum(e.counter_issued||e.number) + '</b><span>' + (e.owner ? esc(addrShort(e.owner)) : 'NFT') + '</span><span style="color:var(--faint)">' + esc(evAgo(e)) + '</span></div>';
+      return '<div class="mr"><b class="num">#' + fmtNum(e.counter_issued||e.number) + '</b><span>NFT</span><span style="color:var(--faint)">' + esc(evAgo(e)) + '</span></div>';
     }).join('') + '</div>' : '') +
   '<div class="shbtns">' +
-    '<button class="btn gold" id="shTgt">Следить за №' + fmtNum(Number(g.issued)+1) + '</button>' +
-    '<button class="btn ghost" id="shOpen">t.me / nft ↗</button>' +
+    '<button class="btn gold" id="shOpen">Открыть на t.me ↗</button>' +
+    '<button class="btn ghost" id="shFrag">Fragment ↗</button>' +
   '</div>';
   $('colBody').innerHTML = html;
-  $('shFav').addEventListener('click', function(){ haptic(); toggleFav(slug); openColSheet(slug); renderCollections(); });
-  $('shTgt').addEventListener('click', function(){
-    var num = Number(g.issued) + 1;
-    var list = tgtLoad();
-    for (var j=0;j<list.length;j++) if (list[j].slug === slug && list[j].num === num){ toast('цель уже есть'); return; }
-    list.push({ slug: slug, num: num, stars: 0, st: tgtState(num - Number(g.issued)), i: Number(g.issued), ts: Date.now() });
-    tgtSave(list); renderGoals(); closeSheets(); haptic();
-    toast('цель #' + fmtNum(num) + ' взята — уведомим, когда появится');
-  });
   $('shOpen').addEventListener('click', function(){ openLink('https://t.me/nft/' + slug.toLowerCase() + '-' + Math.max(1, g.issued)); });
+  $('shFrag').addEventListener('click', function(){ openLink('https://fragment.com/gifts/' + slug.toLowerCase()); });
   $('ovl').classList.add('on'); $('sheetCol').classList.add('on');
 }
 function closeSheets(){ $('ovl').classList.remove('on'); $('sheetCol').classList.remove('on'); $('sheetSet').classList.remove('on'); }
@@ -705,15 +598,16 @@ $('btnSet').addEventListener('click', function(){ haptic(); renderSettings(); $(
 
 function renderSettings(){
   var html =
-  '<div class="srow"><div class="st"><b>ТЕМА</b><span>светлая / тёмная / авто</span></div>' +
+  '<div class="srowS"><div class="st"><b>ТЕМА</b><span>светлая / тёмная / авто</span></div>' +
     '<div style="display:flex;gap:6px">' +
       ['auto','light','dark'].map(function(v){
-        return '<button class="vt' + (THEME === v ? ' sel' : '') + '" data-th="' + v + '" style="padding:8px 12px;border-radius:12px;background:' + (THEME === v ? 'var(--ink)' : 'var(--ln)') + ';color:' + (THEME === v ? 'var(--paper)' : 'var(--ink2)') + ';font-size:12px;font-weight:800">' + (v === 'auto' ? 'А' : v === 'dark' ? '◐' : '◑') + '</button>';
+        return '<button data-th="' + v + '" style="padding:8px 12px;border-radius:12px;background:' + (THEME === v ? 'var(--ink)' : 'var(--ln)') + ';color:' + (THEME === v ? 'var(--paper)' : 'var(--ink2)') + ';font-size:12px;font-weight:800">' + (v === 'auto' ? 'А' : v === 'dark' ? '◐' : '◑') + '</button>';
       }).join('') +
     '</div></div>' +
-  '<div class="srow"><div class="st"><b>ЗВУК УЛУЧШЕНИЯ</b><span>сигнал при новом апгрейде</span></div><div class="sw' + (SOUND ? ' on' : '') + '" id="swSound"></div></div>' +
-  '<div class="srow"><div class="st"><b>БАННЕРЫ ЦЕЛЕЙ</b><span>всплывающие уведомления</span></div><div class="sw' + (NQ.cfg.banners ? ' on' : '') + '" id="swBan"></div></div>' +
-  '<div class="srow"><div class="st"><b>ВИБРАЦИЯ</b><span>отклик при событии</span></div><div class="sw' + (NQ.cfg.vibro ? ' on' : '') + '" id="swVib"></div></div>';
+  '<div class="srowS"><div class="st"><b>ЗВУК УЛУЧШЕНИЯ</b><span>сигнал при новом апгрейде</span></div><div class="sw' + (SOUND ? ' on' : '') + '" id="swSound"></div></div>' +
+  '<div class="srowS"><div class="st"><b>БАННЕРЫ</b><span>всплывающие уведомления</span></div><div class="sw' + (NQ.cfg.banners ? ' on' : '') + '" id="swBan"></div></div>' +
+  '<div class="srowS"><div class="st"><b>ВИБРАЦИЯ</b><span>отклик при событии</span></div><div class="sw' + (NQ.cfg.vibro ? ' on' : '') + '" id="swVib"></div></div>' +
+  '<div class="note">GIFT ATELIER · 5 независимых сканеров ищут улучшения на первоисточнике Telegram. Витрина и лента обновляются каждые несколько секунд, полный цикл сканирования — каждые 5 минут. Имена коллекций — данные nft.fragment.com.</div>';
   $('setBody').innerHTML = html;
   Array.prototype.forEach.call($('setBody').querySelectorAll('[data-th]'), function(b){
     b.addEventListener('click', function(){ THEME = b.getAttribute('data-th'); localStorage.setItem('gm_theme', THEME); applyTheme(); renderSettings(); });
@@ -726,7 +620,7 @@ function renderSettings(){
 
 <script>
 "use strict";
-/* ═══ собственная система уведомлений ═══ */
+/* ═══ собственная система уведомлений (внутри мини-апа) ═══ */
 var NQ = { list: [], unread: 0, cfg: { sound: true, vibro: true, banners: true } };
 function nqLoad(){
   try { var l = JSON.parse(localStorage.getItem('radar_nq') || '[]'); if (Object.prototype.toString.call(l) === '[object Array]') NQ.list = l.slice(0, 60); } catch(e){}
@@ -745,7 +639,7 @@ function nqSound(kind){
     var ctx = nqSound.ctx || (nqSound.ctx = new AC());
     if (ctx.state === 'suspended') ctx.resume();
     var t = ctx.currentTime;
-    var freqs = kind === 'done' ? [523.25, 659.25, 783.99] : [523.25, 659.25];
+    var freqs = kind === 'upg' ? [659.25, 783.99] : [523.25, 659.25];
     freqs.forEach(function(f, i){
       var o = ctx.createOscillator(), g = ctx.createGain();
       o.type = 'sine'; o.frequency.value = f;
@@ -768,8 +662,7 @@ function nqPush(type, ico, title, msg, slug, num){
   if (NQ.list.length > 60) NQ.list.length = 60;
   NQ.unread++; nqSave(); nqBadge(); nqRender();
   if (NQ.cfg.banners) nqBanner(n);
-  nqSound(type === 'done' ? 'done' : 'near');
-  nqVibro();
+  nqSound(type); nqVibro();
 }
 function nqBadge(){
   var b = $('nbadge'); if (!b) return;
@@ -815,50 +708,11 @@ function nqClear(){ NQ.list = []; NQ.unread = 0; nqSave(); nqBadge(); nqRender()
 $('btnBell').addEventListener('click', nqPanelToggle);
 $('npClear').addEventListener('click', nqClear);
 nqLoad(); nqBadge(); nqRender();
-
-/* ═══ вотчер целей ═══ */
-function watcherTick(){
-  var list = tgtLoad(); if (!list.length) return;
-  var changed = false;
-  list.forEach(function(t){
-    var g = findBySlug(t.slug); if (!g) return;
-    var issued = Number(g.issued)||0;
-    var st = tgtState(Number(t.num) - issued);
-    if (t.st !== st){
-      var order = { watch: 0, near: 1, hot: 2, done: 3 };
-      if (t.st && order[st] > order[t.st]){
-        var nm = g.name || t.slug;
-        if (st === 'near') nqPush('near','⏰','БЛИЗКО · ' + nm, 'до №' + fmtNum(t.num) + ' осталось ' + (Number(t.num)-issued) + ' · выпущено №' + fmtNum(issued), t.slug, t.num);
-        else if (st === 'hot') nqPush('hot','🔥','ГОРИТ · ' + nm, 'номер ' + fmtNum(t.num) + ' рядом — готовь апгрейд (выпущено №' + fmtNum(issued) + ')', t.slug, t.num);
-        else if (st === 'done') nqPush('done','🎯','ГОТОВО · ' + nm, 'номер ' + fmtNum(t.num) + ' выпущен — цель достигнута', t.slug, t.num);
-      }
-      t.st = st; t.i = issued; changed = true;
-    } else if (t.i !== issued){ t.i = issued; changed = true; }
-  });
-  if (changed){ tgtSave(list); renderGoals(); }
-}
-/* апгрейды избранных */
-var upgSeen = null;
-function watchUpgrades(){
-  if (!feedEvents.length) return;
-  if (!upgSeen){
-    upgSeen = {};
-    feedEvents.forEach(function(e){ upgSeen[String(e.slug||'').trim()+'#'+(e.number||e.counter_issued)] = 1; });
-    return;
-  }
-  feedEvents.forEach(function(e){
-    var key = String(e.slug||'').trim()+'#'+(e.number||e.counter_issued);
-    if (upgSeen[key]) return;
-    upgSeen[key] = 1;
-    var slug = String(e.slug||'').trim();
-    if (isFav(slug)) nqPush('upg','🚀','АПГРЕЙД · ' + (e.gift||slug), 'номер #' + fmtNum(e.number||e.counter_issued) + ' улучшен до NFT', slug, Number(e.number||e.counter_issued));
-  });
-}
 </script>
 
 <script>
 "use strict";
-/* ═══ refresh-цикл данных ═══ */
+/* ═══ refresh-цикл данных (обновляется каждые 6 секунд) ═══ */
 var liveTsMax = 0, firstLoad = true, lastSeenTs = 0;
 function beep(){
   if (!SOUND) return;
@@ -874,23 +728,33 @@ function beep(){
 }
 function newUpgradeAlert(evts){
   if (firstLoad){ firstLoad = false; if (evts.length) lastSeenTs = evts[0].mint || 0; return; }
-  var fresh = 0;
-  for (var i=0;i<evts.length;i++){ var t = evts[i].mint || 0; if (t > lastSeenTs) fresh++; }
-  if (fresh && lastSeenTs){ beep(); }
+  var fresh = [];
+  for (var i=0;i<evts.length;i++){ var t = evts[i].mint || 0; if (t > lastSeenTs) fresh.push(evts[i]); }
+  if (fresh.length && lastSeenTs){
+    beep();
+    var newest = fresh[0];
+    var slug = String(newest.slug||'').trim();
+    var nm = newest.gift || slug;
+    var num = newest.counter_issued || newest.number || 0;
+    nqPush('upg','🚀','УЛУЧШЕНИЕ · ' + nm,
+      fresh.length > 1 ? ('#' + fmtNum(num) + ' и ещё ' + (fresh.length - 1) + ' — сканеры поймали ' + fresh.length + ' новых') : ('номер #' + fmtNum(num) + ' улучшен до NFT'),
+      slug, Number(num));
+  }
   if (evts.length) lastSeenTs = evts[0].mint || 0;
 }
-function renderAll(){ renderStats(); renderShowcase(); renderFeed(); renderCollections(); renderGoals(); watcherTick(); watchUpgrades(); }
+function renderAll(){ renderStats(); renderScanners(); renderShowcase(); renderFeed(); renderCatalog(); }
 function refresh(light){
   var FETCHES = light
-    ? [jget('status.json'), jget('gifts.json'), null, null, jget('live.json').catch(function(){ return { items: {} }; })]
-    : [jget('status.json'), jget('gifts.json'), jget('history.json').catch(function(){ return { hours: [] }; }), jget('floors.json').catch(function(){ return { floors: {} }; }), jget('live.json').catch(function(){ return { items: {} }; })];
+    ? [jget('status.json'), jget('gifts.json'), null, jget('live.json').catch(function(){ return { items: {} }; })]
+    : [jget('status.json'), jget('gifts.json'), jget('history.json').catch(function(){ return { hours: [] }; }), jget('live.json').catch(function(){ return { items: {} }; })];
   Promise.all(FETCHES)
   .then(function(res){
     if (res[0] && res[0].__stale && feedEvents.length) return;
     statD = res[0] || {};
     histData = (res[2] && res[2].hours) ? res[2].hours : (histData || []);
     giftsData = (res[1] && res[1].gifts) ? res[1].gifts : [];
-    var liveItems = (res[4] && res[4].items) ? res[4].items : {};
+    if (statD.scanners) scannerData = statD.scanners;
+    var liveItems = (res[3] && res[3].items) ? res[3].items : {};
     var lvTs = 0;
     for (var lk in liveItems){ var lt = liveItems[lk] && Number(liveItems[lk].ts)||0; if (lt > lvTs) lvTs = lt; }
     liveTsMax = lvTs;
@@ -906,13 +770,11 @@ function refresh(light){
       return (Number(b2.number)||0) - (Number(a2.number)||0);
     });
     feedEvents = evts;
-    hotMap = {}; lastUpgMap = {};
+    hotMap = {};
     var dayAgo = Date.now()/1000 - 86400;
     evts.forEach(function(e){
       var t = evTs(e); var key = String(e.slug||'').trim();
-      if (!key) return;
-      lastUpgMap[key] = e.counter_issued || e.number || 0;
-      if (t < dayAgo) return;
+      if (!key || t < dayAgo) return;
       if (!hotMap[key] || t > hotMap[key]) hotMap[key] = t;
     });
     newUpgradeAlert(evts);
@@ -928,13 +790,13 @@ function refresh(light){
     giftsData.push({ slug: x[0], name: x[1] || x[0], issued: x[2], total: x[3], rate: 0, added: 0 });
   });
   statD = { updated_unix: window.BOOT.ts, detected_total: window.BOOT.u, last_upgrades: window.BOOT.r || [] };
+  if (window.BOOT.s) scannerData = window.BOOT.s;
   feedEvents = (statD.last_upgrades || []).slice();
   var dayAgo = Date.now()/1000 - 86400;
   feedEvents.forEach(function(e){
     var t = evTs(e); var key = String(e.slug||'').trim();
     if (!key || t < dayAgo) return;
     if (!hotMap[key] || t > hotMap[key]) hotMap[key] = t;
-    lastUpgMap[key] = e.counter_issued || e.number || 0;
   });
   renderAll();
 })();
