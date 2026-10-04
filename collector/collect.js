@@ -440,6 +440,10 @@ async function drainPending(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushed = state.pushed || {};
   let sent = 0, black = 0;
+  {
+    const me = await tg('getMe', {}).catch(e => ({ ok: false, description: 'net:' + e.message }));
+    console.log('DIAG tg.getMe ok=' + me.ok + ' user=' + ((me.result && me.result.username) || me.description || '?'));
+  }
   const SEND_GAP = 1100; /* ~1/сек на чат: НЕ дразним 429, вместо ретраев после */
   const markSent = e => {
     state.pushed[e.slug + '#' + e.number] = 1;
@@ -925,6 +929,24 @@ async function discoverCollections(registry, state, fragCache, now){
   /* рассылка очереди — ПОСЛЕ скана: детект никогда не ждёт Telegram;
      бюджет: полный проход 45с, горячая полоса 20с, недоставленное — в очереди
      (персистится ниже в state.json) и уходит первым следующим циклом */
+  /* лечение очереди: убираем дубли (две копии одного номера от пересечения
+     воркеров при рестартах) и то, что уже было отправлено в прошлых циклах;
+     из пары дублей оставляем копию с проверенным фоном (bdChecked) */
+  const healQueue = (arr, pushed) => {
+    if (!Array.isArray(arr) || !arr.length) return arr;
+    const seen = new Map();
+    for (const e of arr){
+      const k = e.slug + '#' + e.number;
+      if (pushed && pushed[k]) continue;
+      const prev = seen.get(k);
+      if (prev === undefined) seen.set(k, e);
+      else if (!prev.bdChecked && e.bdChecked) seen.set(k, e);
+    }
+    return [...seen.values()];
+  };
+  if (state.pending) state.pending = healQueue(state.pending, state.pushed);
+  if (state.pendingChan) state.pendingChan = healQueue(state.pendingChan, state.pushedChan);
+
   if (process.env.BOT_TOKEN && state.pending && state.pending.length){
     await drainPending(state, HOT ? 20000 : 45000);
     if (process.env.CHANNEL_ID) await drainChannel(state, HOT ? 15000 : 40000);

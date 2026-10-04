@@ -45,7 +45,7 @@ jobs:
             if [ "$2" -gt 0 ]; then
               git add docs/gifts.json docs/status.json docs/live.json docs/history.json docs/fragment.json docs/index.html docs/img collector/state.json collector/samples.json collector/registry.json
               if ! git diff --cached --quiet; then
-                echo "$1" | tail -2
+                echo "$1" | tail -8
                 git commit -q -m "collector: +$2 upg ($(date -u +'%H:%M:%S'))"
                 git pull --rebase -q -X theirs origin main || true
                 git push -q || (sleep 4; git pull --rebase -q -X theirs origin main || true; git push -q || true)
@@ -80,7 +80,7 @@ jobs:
               HOUT=$(HOT=1 node collector/collect.js 2>&1) || true
               HNEW=$(echo "$HOUT" | grep -oP 'new=\K[0-9]+' | head -1); HNEW=${HNEW:-0}
               HLEFT=$(echo "$HOUT" | grep -oP 'left=\K[0-9]+' | tail -1); HLEFT=${HLEFT:-0}
-              echo "$HOUT" | grep -E 'push=|HOT lane' || true
+              echo "$HOUT" | grep -E 'push=|HOT lane|DIAG|warning|429|error' || true
               commit_cycle "$HOUT" "$((HNEW + HLEFT))"
               sleep 2
             done
