@@ -63,9 +63,20 @@ Symbol: Z' — берём значение Backdrop */
   const m = body.match(/Backdrop:\s*([^\n<"]+)/);
   return m ? m[1].trim() : null;
 }
+/* «Номера ещё нет» — НЕ вечный факт:gift может быть улучшен через секунду после
+   пробы. Раньше отрицательный ответ кэшировался навсегда → апгрейд, случившийся
+   сразу после пробы, не замечался до перезапуска воркера (до ~50 минут!) — это и
+   были «перебои с номерами». Теперь: положительный ответ вечен (существование
+   монотонно, номер один раз созданный существует всегда), отрицательный живёт
+   NEG_TTL и по истечении перепроверяется свежим запросом. */
+const NEG_TTL = 90 * 1000;
 async function exists(slug, n, stat){
   const key = slug + '#' + n;
-  if (oracleCache.has(key)) return oracleCache.get(key);
+  const c = oracleCache.get(key);
+  if (c !== undefined){
+    if (c.v || Date.now() - c.ts <= NEG_TTL) return c.v;
+    oracleCache.delete(key); // протухшее «нет» — перепроверяем по-настоящему
+  }
   for (let attempt = 0; attempt < 2; attempt++){
     try {
       if (stat) stat.req++;
@@ -78,7 +89,7 @@ async function exists(slug, n, stat){
       clearTimeout(t);
       const body = await res.text();
       const ok = body.indexOf('NFT was created') >= 0;
-      oracleCache.set(key, ok);
+      oracleCache.set(key, { v: ok, ts: Date.now() });
       if (ok){
         const art = extractArt(body); if (art) artCache.set(key, art);
         const bd = extractBackdrop(body); if (bd) bdCache.set(key, bd);
@@ -111,7 +122,15 @@ async function scanCollection(slug, lastKnown, total){
     SCAN.s1.found++;
     return lo;
   }
-  if (total && lastKnown >= total) return lastKnown;
+  if (total && lastKnown >= total){
+    /* Telegram иногда РАСШИРЯЕТ тираж закрытой коллекции — раньше такие новые
+       апгрейды пропускались навсегда (сканер считал коллекцию законченной).
+       Один дешёвый запрос за цикл: если №lastKnown+1 появился — падаем в общий
+       путь ниже и бинаркой находим новую границу. Слепой зоны больше нет. */
+    const nx = await safeExists(slug, lastKnown + 1, SCAN.s2);
+    if (nx !== true) return lastKnown;
+    console.log('supply_extended=' + slug + ' (#' + (lastKnown + 1) + ' за пределом тиража ' + total + ')');
+  }
 
   /* S2: линейный пробер — свежие номера чаще всего идут подряд */
   let cur = lastKnown;
@@ -388,9 +407,23 @@ async function pushUpgrades(events, state){
        КАЖДОГО события в этом цикле, затем чёрные уходят отдельными закреплёнными
        карточками, а остальное — как раньше (пачка или по одной). */
     const bdOf = new Map();
-    for (const e of fresh){
-      const bd = await getBackdrop(e.slug, e.number);
-      bdOf.set(e, bd);
+    if (fresh.length > 1){
+      /* ураган: фон для всех номеров читаем ПАРАЛЛЕЛЬНО (пул 6) — 100 номеров
+         читаются за ~15-20 сек вместо минут последовательных запросов; кэш детекта
+         (bdCache) отдаёт большинство мгновенно, прямые запросы идут только тем,
+         кого бинарный поиск не трогал */
+      const queue = fresh.slice();
+      const worker = async () => {
+        while (queue.length){
+          const e = queue.shift();
+          bdOf.set(e, await getBackdrop(e.slug, e.number));
+          await new Promise(r => setTimeout(r, 40));
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, fresh.length) }, worker));
+    } else if (fresh.length === 1){
+      const e = fresh[0];
+      bdOf.set(e, await getBackdrop(e.slug, e.number));
     }
     const blackList = fresh.filter(e => { const bd = bdOf.get(e); return bd && BLACK_BACKDROP_RE.test(bd); });
     const normalList = fresh.filter(e => !blackList.includes(e));
