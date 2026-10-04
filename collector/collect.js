@@ -293,7 +293,7 @@ async function pushUpgrades(events, state){
       fresh.forEach(e => { colSlug[e.gift || e.slug] = e.slug; });
       for (const name in byCol){
         const nums = byCol[name].sort((a,b)=>a-b);
-        const em = emojiOf(colSlug[name] || name);
+        const em = emojiOf(colSlug[name] || name, state);
         lines.push(em + ' <b>' + esc_(name) + '</b> №' + nums[0] + (nums.length > 1 ? '–' + nums[nums.length-1] + ' (' + nums.length + ')' : ''));
       }
       await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
@@ -301,7 +301,7 @@ async function pushUpgrades(events, state){
     } else {
       for (const e of fresh){
         const nm = e.gift || e.slug;
-        const em = emojiOf(e.slug);
+        const em = emojiOf(e.slug, state);
         const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
         const cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен → <a href="' + nftUrl + '">до NFT</a>';
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
@@ -322,12 +322,29 @@ async function pushUpgrades(events, state){
 function esc_(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 /* премиум-стикер на коллекцию: один и тот же символ для одной коллекции всегда,
    разный для разных — чтобы узнавать коллекцию в ленте с одного взгляда, без чтения названия */
-const COLLECTION_EMOJI = ['🏮','💎','🔮','🌟','✨','🪄','👑','🎆','🧿','🔱','🫧','🪩','🎇','🌙','⚜️','🥇','🔥','🌌','🪬','💫','🎖️','🧨','🌠','🎐','🪅','🏆','🔆','🪞','🎊','🧊','🪆','🎏','🌃','🪔','🎉','💠'];
-function emojiOf(slug){
-  let h = 0; const s = String(slug);
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return COLLECTION_EMOJI[h % COLLECTION_EMOJI.length];
+/* премиум-стикер на коллекцию: закрепляется за коллекцией НАВСЕГДА в state.json
+   (emojiOfSlug: slug -> эмодзи). Новая коллекция берёт свободный эмодзи из пула —
+   все 121+ коллекций получают РАЗНЫЕ стикеры, и у каждой свой навсегда. */
+const EMOJI_POOL = ['🏮','💎','🔮','🌟','✨','🪄','👑','🎆','🧿','🔱','🫧','🪩','🎇','🌙','⚜️','🥇','🔥','🌌','🪬','💫','🎖️','🧨','🌠','🎐','🪅','🏆','🔆','🪞','🎊','🧊','🪆','🎏','🌃','🪔','🎉','💠','🍊','🕯️','🌷','🌺','🌻','🍀','🌿','🥀','🪷','💐','🌹','🦋','🐝','🐞','🦜','🦚','🦩','🕊️','🐇','🐿️','🦔','🐾','🐉','🐲','🦄','🐎','🦋',' 🐬','🐳','🦈','🦀','🐚','🪸','🐚','⚡','❄️','⛄','🌪️','🌊','💧','🫧','🌈','☀️','🌤️','⭐','🌠','☄️','🪐','🌌','🌠','🎧',' 🎼','🎹','🥁','🎺','🎸','🎻','♟️','🎯','🎲','🧩','🎴','🎭','🎪','🎡','🎢','🎠','⛱️','🎁','🎈','🎏','🎀','🛍️','👑',' 🥂','🍾','🍹','🍸','🍷','🍰','🎂','🧁','🍩','🍪','🍫','🍬','🍭','🍯','☕','🍵','🧊','🏺','⛩️','🏰','🏯','🗽','🗼',' 🗿','🛕','⚡','🔋','💡','🔦','📈','💰','🪙','💳','💹','💠','🔱','⚛️','🔬','🧬','🧪','🧲','🔭','📡','🛰️','🚀','🛸','🛎️','🗝️','🔑','🗝️','⚔️','🛡️','🏹','🔭','🧿'];
+function emojiOf(slug, state){
+  state.emojiSticker = state.emojiSticker || {};
+  const s = String(slug).trim();
+  if (state.emojiSticker[s]) return state.emojiSticker[s];
+  const used = new Set(Object.values(state.emojiSticker));
+  const pool = Array.from(new Set(EMOJI_POOL)).filter(e => e && !/\s/.test(e));
+  const free = pool.filter(e => !used.has(e));
+  let em;
+  if (free.length){
+    let h = 0; const str = s.toLowerCase();
+    for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+    em = free[h % free.length];
+  } else {
+    em = pool[(EMOJI_POOL.length + hOf(s)) % pool.length]; // пул кончился — редко, fallback
+  }
+  state.emojiSticker[s] = em;
+  return em;
 }
+function hOf(s){ let h = 0; for (let i = 0; i < String(s).length; i++) h = (h * 31 + String(s).charCodeAt(i)) >>> 0; return h; }
 
 /* ═══ DISCOVERY: автообнаружение новых коллекций с Fragment ═══
    Fragment /gifts первым показывает свежие коллекции; каждый полный цикл сверяем
