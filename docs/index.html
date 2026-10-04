@@ -1623,17 +1623,19 @@ if (location.search.indexOf('debug=1') >= 0){
 </script>
 
 <script>
-/* TEMP PROBE v2: DOM-зонд */
-window.__pe = function(m){ var d=document.getElementById('probe2')||document.createElement('div'); d.id='probe2'; d.style.cssText='position:fixed;top:0;left:0;z-index:99999;background:#f00;color:#fff;font:12px monospace;padding:4px;max-width:100%'; d.textContent='P2:'+m; document.body.appendChild(d); };
-window.addEventListener('error', function(e){ window.__pe('JSERR '+(e.message||'')+' @'+(e.lineno||'')+' in '+(e.filename||'').split('/').pop()); });
-var _refresh = refresh;
-refresh = function(first, light){
-  window.__pe('refresh('+(first?'1':'0')+','+(light?'1':'0')+') start');
-  var pr = _refresh(first, light);
-  Promise.resolve(pr);
-  /* refresh не возвращает промис — проверим результат по сайд-эффекту ниже */
-  return pr;
-};
-setTimeout(function(){ window.__pe('t+10s s3=' + (document.getElementById('s3')||{}).textContent + ' statD=' + (typeof statD !== 'undefined' && statD ? Object.keys(statD).length : 'undef')); }, 10000);
+<script>
+/* TEMP PROBE v3: MutationObserver-лог */
+window.__log = [];
+window.__pe = function(m){ window.__log.push(String(m).slice(0,150)); var d=document.getElementById('probe2'); if(!d){ d=document.createElement('div'); d.id='probe2'; d.style.cssText='position:fixed;top:0;left:0;z-index:99999;background:#f00;color:#fff;font:11px monospace;padding:4px;max-width:100%;white-space:pre'; document.body.appendChild(d);} d.textContent = window.__log.slice(-6).join(' | '); };
+window.addEventListener('error', function(e){ window.__pe('JSERR '+(e.message||'').slice(0,80)+' @'+(e.lineno||'')+' '+(e.filename||'').split('/').pop()); });
+window.addEventListener('unhandledrejection', function(e){ window.__pe('REJ '+(e.reason && (e.reason.message||e.reason) || e.reason)); });
+setTimeout(function(){ window.__pe('boot s3=' + (document.getElementById('s3') ? 'YES' : 'NO')); }, 100);
+var _mo = new MutationObserver(function(muts){
+  var wiped = false, big = false;
+  muts.forEach(function(m){ if (m.removedNodes && m.removedNodes.length > 20) wiped = true; if (m.addedNodes && m.addedNodes.length > 20) big = true; });
+  if (wiped) window.__pe('BODY-WIPED removed>20 target=' + (document.body && document.body.id || 'body') + ' kids=' + document.body.childNodes.length);
+});
+_mo.observe(document.body, { childList: true, subtree: false });
+setTimeout(function(){ window.__pe('t+8s s3=' + (document.getElementById('s3') ? 'YES' : 'NO') + ' bodyKids=' + document.body.childNodes.length); }, 8000);
 </script></body>
 </html>
