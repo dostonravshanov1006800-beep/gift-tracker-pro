@@ -270,6 +270,24 @@ async function tg(method, body){
   });
   return res.json();
 }
+/* ── АВТОЗАКРЕПКА ЧЁРНОГО ФОНА ──
+   Для каждого нового улучшения читаем атрибуты экземпляра (t.me/nft/<slug>-<num>,
+   поле Backdrop в og:description). Чёрный фон (Black, Onyx Black…) — редкость:
+   карточка автоматически закрепляется сверху чата бота (предыдущая чёрная
+   снимается — сверху всегда самая свежая, искать не нужно). */
+const BLACK_BACKDROP_RE = /black/i;
+async function fetchBackdrop(slug, num){
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch('https://t.me/nft/' + String(slug).toLowerCase() + '-' + num, { headers: { 'User-Agent': UA }, signal: ctl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const html = await res.text();
+    const m = html.match(/Backdrop:\s*([^\n<"]*)/);
+    return m ? m[1].trim() : null;
+  } catch(e){ return null; }
+}
 async function pushUpgrades(events, state){
   const chat = process.env.TG_CHAT_ID || '8396883978';
   try {
@@ -303,13 +321,32 @@ async function pushUpgrades(events, state){
         const nm = e.gift || e.slug;
         const em = emojiOf(e.slug, state);
         const nftUrl = 'https://t.me/nft/' + e.slug.toLowerCase() + '-' + e.number;
-        const cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен → <a href="' + nftUrl + '">до NFT</a>';
+        /* фон экземпляра — один запрос, заодно попадает в подпись каждой карточки */
+        const bd = await fetchBackdrop(e.slug, e.number);
+        const black = bd && BLACK_BACKDROP_RE.test(bd);
+        let cap = em + ' <b>' + esc_(nm) + '</b> #' + e.number + '\n⚡ улучшен → <a href="' + nftUrl + '">до NFT</a>';
+        if (bd) cap += '\n🎨 Фон: ' + esc_(bd) + (black ? ' · <b>РЕДКИЙ</b>' : '');
+        if (black) cap = '🖤 <b>ЧЁРНЫЙ ФОН</b>\n' + cap;
         const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+        let mid = null;
         if (e.art){
           const r = await tg('sendPhoto', { chat_id: chat, photo: e.art, caption: cap, parse_mode: 'HTML', reply_markup: kb });
-          if (!r.ok) await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+          if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
+          else {
+            const r2 = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+            if (r2.ok && r2.result && r2.result.message_id) mid = r2.result.message_id;
+          }
         } else {
-          await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+          const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb });
+          if (r.ok && r.result && r.result.message_id) mid = r.result.message_id;
+        }
+        /* чёрный фон → закрепить сверху (сняв предыдущую чёрную) */
+        if (black && mid){
+          try {
+            if (state.blackPin) await tg('unpinChatMessage', { chat_id: chat, message_id: state.blackPin });
+            const p = await tg('pinChatMessage', { chat_id: chat, message_id: mid, disable_notification: true });
+            if (p.ok){ state.blackPin = mid; console.log('pinned_black=' + e.slug + '#' + e.number + ' backdrop=' + bd); }
+          } catch(e2){ console.log('::warning::pin failed: ' + e2.message); }
         }
         await new Promise(r => setTimeout(r, 60));
       }
