@@ -294,19 +294,19 @@ async function pool(items, n, fn){
 
 /* ═══ МГНОВЕННЫЙ ПУШ АПГРЕЙДОВ (как у Trackingonebot): карточка в чат через @lvlonebot ═══ */
 async function tg(method, body){
-  /* 429 от Telegram (всплеск >1 сообщения/сек в один чат) — раньше просто логировался
-     и карточка терялась без повтора. Теперь уважаем retry_after и повторяем один раз —
-     ни одна карточка не должна пропадать молча из-за кратковременного лимита. */
-  for (let attempt = 0; attempt < 2; attempt++){
+  /* НЕ ретраим 429 внутри tg. Живой лог показал: «подожди retry_after и повтори
+     раз» + следующая попытка через 1.1с = вечный flood-цикл (бот часами ловил 429
+     на каждый вызов). Попытка ВНУТРИ активного flood-окна продлевает его. Теперь
+     429 обрабатывает drain: фиксирует floodUntil в state и молчит до конца окна;
+     окно персистится в state.json, рестарт процесса его не сбрасывает. */
+  try {
     const res = await fetch('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/' + method, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body), signal: AbortSignal.timeout(10000)
     });
-    const j = await res.json();
-    if (j.ok || j.error_code !== 429 || attempt === 1) return j;
-    const wait = (j.parameters && j.parameters.retry_after ? j.parameters.retry_after : 2) * 1000 + 150;
-    console.log('::warning::429 от Telegram на ' + method + ', жду ' + wait + 'мс и повторяю');
-    await new Promise(r => setTimeout(r, wait));
+    return await res.json();
+  } catch(e){
+    return { ok: false, description: 'net:' + e.message, error_code: 0 };
   }
 }
 /* Telegram не может сам скачать картинку по URL с cdn*.telesco.pe (failed to get HTTP URL
@@ -437,6 +437,10 @@ async function drainPending(state, budgetMs){
     delete state.blackPin;
     console.log('bot_pin_removed (закреп теперь только в канале)');
   }
+  if (state.floodUntil && Date.now() < state.floodUntil){
+    console.log('flood_wait=' + Math.ceil((state.floodUntil - Date.now())/1000) + 'с (не стучим в окно)');
+    return 0;
+  }
   const deadline = Date.now() + budgetMs;
   state.pushed = state.pushed || {};
   let sent = 0, black = 0;
@@ -470,6 +474,14 @@ async function drainPending(state, budgetMs){
     const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
       link_preview_options: { url: nftUrl, prefer_large_media: true } });
     if (r.ok){ markSent(e); if (isBlack) black++; else sent++; }
+    else if (r.error_code === 429){
+      /* единственная правильная реакция на flood: тишина до конца окна.
+         Попытка внутри окна продлевает штраф — так бот и застревал на push=0. */
+      const ra = (r.parameters && r.parameters.retry_after) || 8;
+      state.floodUntil = Date.now() + (ra + 1) * 1000;
+      console.log('FLOOD 429 retry_after=' + ra + 'с — тишина до ' + new Date(state.floodUntil).toISOString());
+      return false; /* false = остановить весь drain */
+    }
     else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
     await new Promise(r => setTimeout(r, SEND_GAP));
     return true;
@@ -483,7 +495,7 @@ async function drainPending(state, budgetMs){
     ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
     for (const e of ready){
       if (Date.now() >= deadline) break;
-      await sendOne(e);
+      if (await sendOne(e) === false) break;
     }
     /* ФАЗА 2: остатком бюджета — fallback-проверка фона для старых элементов
        очереди без bdChecked (до этого фикса фон не сохранялся в очереди).
@@ -511,7 +523,7 @@ async function drainPending(state, budgetMs){
       resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
       for (const e of resolved){
         if (Date.now() >= deadline) break;
-        await sendOne(e);
+        if (await sendOne(e) === false) break;
       }
     }
     const left = state.pending.length;
@@ -528,6 +540,10 @@ async function drainPending(state, budgetMs){
 async function drainChannel(state, budgetMs){
   const chan = String(process.env.CHANNEL_ID || '').trim();
   if (!chan || !state.pendingChan || !state.pendingChan.length) return 0;
+  if (state.floodUntilChan && Date.now() < state.floodUntilChan){
+    console.log('chan_flood_wait=' + Math.ceil((state.floodUntilChan - Date.now())/1000) + 'с (не стучим в окно)');
+    return 0;
+  }
   const deadline = Date.now() + budgetMs;
   state.pushedChan = state.pushedChan || {};
   let sent = 0, black = 0;
@@ -557,6 +573,12 @@ async function drainChannel(state, budgetMs){
     const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
       link_preview_options: { url: nftUrl, prefer_large_media: true } });
     if (r.ok){ markSent(e); if (isBlack) black++; else sent++; }
+    else if (r.error_code === 429){
+      const ra = (r.parameters && r.parameters.retry_after) || 8;
+      state.floodUntilChan = Date.now() + (ra + 1) * 1000;
+      console.log('FLOOD(chan) 429 retry_after=' + ra + 'с — тишина до ' + new Date(state.floodUntilChan).toISOString());
+      return false;
+    }
     if (isBlack){
       const mid = r.ok && r.result ? r.result.message_id : null;
       if (mid){
@@ -579,7 +601,7 @@ async function drainChannel(state, budgetMs){
     ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
     for (const e of ready){
       if (Date.now() >= deadline) break;
-      await sendOne(e);
+      if (await sendOne(e) === false) break;
     }
     /* ФАЗА 2: остатком бюджета — fallback для старых элементов без bdChecked,
        потолок 6с (см. комментарий в drainPending — тот же баг, тот же фикс). */
@@ -603,7 +625,7 @@ async function drainChannel(state, budgetMs){
       resolved.sort((a,b) => (isBlackE(b) - isBlackE(a)) || (a.number - b.number));
       for (const e of resolved){
         if (Date.now() >= deadline) break;
-        await sendOne(e);
+        if (await sendOne(e) === false) break;
       }
     }
     const left = state.pendingChan.length;
