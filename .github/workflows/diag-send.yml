@@ -1,0 +1,38 @@
+name: diag-send
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Test which send type triggers 429 from runner IP
+        run: |
+          node -e '
+          const BOT = process.env.BOT_TOKEN, CHAT = process.env.OWNER_CHAT_ID;
+          async function tg(m, b){
+            const r = await fetch(`https://api.telegram.org/bot${BOT}/${m}`, {
+              method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)
+            });
+            let body; try { body = await r.json(); } catch(e){ body = {parse_error: String(e.message)}; }
+            return {http: r.status, body};
+          }
+          const sleep = ms => new Promise(x => setTimeout(x, ms));
+          (async () => {
+            let r = await tg("sendMessage", {chat_id: CHAT, text: "diag A: plain text"});
+            console.log("A_PLAIN:", JSON.stringify(r).slice(0, 250));
+            await sleep(2000);
+            const url = "https://t.me/nft/miragelamp-55305";
+            r = await tg("sendMessage", {chat_id: CHAT, text: "diag B: preview large\n" + url, link_preview_options: {url, prefer_large_media: true}});
+            console.log("B_PREVIEW_LARGE:", JSON.stringify(r).slice(0, 250));
+            await sleep(2000);
+            const url2 = "https://t.me/nft/miragelamp-55306";
+            r = await tg("sendMessage", {chat_id: CHAT, text: "diag C: preview small\n" + url2, link_preview_options: {url: url2}});
+            console.log("C_PREVIEW_SMALL:", JSON.stringify(r).slice(0, 250));
+            await sleep(2000);
+            r = await tg("sendMessage", {chat_id: CHAT, text: "diag D: preview in text\nhttps://t.me/nft/miragelamp-55307"});
+            console.log("D_PREVIEW_DEFAULT:", JSON.stringify(r).slice(0, 250));
+          })().catch(e => { console.log("FATAL", String(e.message).slice(0,150)); process.exit(1); });
+          '
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_CHAT_ID: '8396883978'
