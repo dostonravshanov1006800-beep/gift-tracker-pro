@@ -1,0 +1,45 @@
+name: diag-send2
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Isolate the 429 - collector-format vs plain
+        run: |
+          node -e '
+          const BOT = process.env.BOT_TOKEN, CHAT = process.env.OWNER_CHAT_ID;
+          async function tg(m, b){
+            const r = await fetch(`https://api.telegram.org/bot${BOT}/${m}`, {
+              method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)
+            });
+            let body; try { body = await r.json(); } catch(e){ body = {parse_error: String(e.message)}; }
+            return {http: r.status, ok: body.ok, err: body.error_code, desc: (body.description||"").slice(0,80), retry: body.parameters && body.parameters.retry_after, mid: body.result && body.result.message_id};
+          }
+          const sleep = ms => new Promise(x => setTimeout(x, ms));
+          (async () => {
+            // A: ТОЧНО как карточка коллектора — реальный номер, HTML, клавиатура, превью
+            const url = "https://t.me/nft/miragelamp-55305";
+            const cap = "🫧 <b>Mirage Lamp</b> #55305\n⚡ улучшен\n🎨 Фон: Electric Indigo\n" + url;
+            const kb = { inline_keyboard: [[{ text: "NFT ↗", url }]] };
+            let r = await tg("sendMessage", { chat_id: CHAT, text: cap, parse_mode: "HTML", reply_markup: kb, link_preview_options: { url, prefer_large_media: true } });
+            console.log("A_COLLECTOR_EXACT:", JSON.stringify(r));
+            await sleep(4000);
+            // B: то же БЕЗ превью
+            r = await tg("sendMessage", { chat_id: CHAT, text: cap, parse_mode: "HTML", reply_markup: kb });
+            console.log("B_NO_PREVIEW:", JSON.stringify(r));
+            await sleep(4000);
+            // C: из очереди (старый бэклог), реальный номер
+            const url2 = "https://t.me/nft/miragelamp-54110";
+            const cap2 = "🫧 <b>Mirage Lamp</b> #54110\n⚡ улучшен\n🎨 Фон: Electric Purple\n" + url2;
+            r = await tg("sendMessage", { chat_id: CHAT, text: cap2, parse_mode: "HTML", reply_markup: kb, link_preview_options: { url: url2, prefer_large_media: true } });
+            console.log("C_BACKLOG_NUM:", JSON.stringify(r));
+            await sleep(4000);
+            // D: контроль - простой текст
+            r = await tg("sendMessage", { chat_id: CHAT, text: "diag2 D: control plain" });
+            console.log("D_CONTROL:", JSON.stringify(r));
+          })().catch(e => { console.log("FATAL", String(e.message).slice(0,150)); process.exit(1); });
+          '
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_CHAT_ID: '8396883978'
