@@ -1,0 +1,48 @@
+name: diag-send3
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pin down the 429 trigger
+        run: |
+          node -e '
+          const BOT = process.env.BOT_TOKEN, CHAT = process.env.OWNER_CHAT_ID;
+          async function tg(m, b){
+            const r = await fetch(`https://api.telegram.org/bot${BOT}/${m}`, {
+              method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)
+            });
+            let body; try { body = await r.json(); } catch(e){ body = {parse_error: String(e.message)}; }
+            return {ok: body.ok, err: body.error_code, retry: body.parameters && body.parameters.retry_after, mid: body.result && body.result.message_id};
+          }
+          const sleep = ms => new Promise(x => setTimeout(x, ms));
+          const card = (slug, num, bd) => "🫧 <b>" + slug + "</b> #" + num + "\n⚡ улучшен" + (bd ? "\n🎨 Фон: " + bd : "") + "\nhttps://t.me/nft/" + slug.toLowerCase() + "-" + num;
+          (async () => {
+            // 1: тот же 54110 ЕЩЁ РАЗ с превью — стабильно ли 429?
+            let r = await tg("sendMessage", { chat_id: CHAT, text: card("Mirage Lamp", 54110, "Electric Purple"), parse_mode: "HTML", link_preview_options: { url: "https://t.me/nft/miragelamp-54110", prefer_large_media: true } });
+            console.log("1_54110_preview_again:", JSON.stringify(r));
+            await sleep(3000);
+            // 2: 54110 БЕЗ превью
+            r = await tg("sendMessage", { chat_id: CHAT, text: card("Mirage Lamp", 54110, null), parse_mode: "HTML" });
+            console.log("2_54110_no_preview:", JSON.stringify(r));
+            await sleep(3000);
+            // 3: два СВЕЖИХ превью подряд
+            r = await tg("sendMessage", { chat_id: CHAT, text: card("Mirage Lamp", 55306, "Fresh A"), parse_mode: "HTML", link_preview_options: { url: "https://t.me/nft/miragelamp-55306", prefer_large_media: true } });
+            console.log("3_fresh_55306_preview:", JSON.stringify(r));
+            await sleep(1500);
+            r = await tg("sendMessage", { chat_id: CHAT, text: card("Mirage Lamp", 55307, "Fresh B"), parse_mode: "HTML", link_preview_options: { url: "https://t.me/nft/miragelamp-55307", prefer_large_media: true } });
+            console.log("4_fresh_55307_preview:", JSON.stringify(r));
+            await sleep(3000);
+            // 5: другой бэклог-номер из очереди (SnakeBox)
+            r = await tg("sendMessage", { chat_id: CHAT, text: card("SnakeBox", 188255, "Persimmon"), parse_mode: "HTML", link_preview_options: { url: "https://t.me/nft/snakebox-188255", prefer_large_media: true } });
+            console.log("5_backlog_snakebox:", JSON.stringify(r));
+            await sleep(3000);
+            // 6: 54125 miragelamp бэклог
+            r = await tg("sendMessage", { chat_id: CHAT, text: card("Mirage Lamp", 54125, "Mystic Pearl"), parse_mode: "HTML", link_preview_options: { url: "https://t.me/nft/miragelamp-54125", prefer_large_media: true } });
+            console.log("6_backlog_54125:", JSON.stringify(r));
+          })().catch(e => { console.log("FATAL", String(e.message).slice(0,150)); process.exit(1); });
+          '
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_CHAT_ID: '8396883978'
