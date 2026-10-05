@@ -444,9 +444,16 @@ async function drainPending(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushed = state.pushed || {};
   let sent = 0, black = 0;
+  let consec429 = 0; /* подряд идущие 429 на РАЗНЫХ карточках = общий флуд чата;
+     одиночный 429 на одной карточке = отравленный URL её превью (диагностика
+     diag2/diag3 05.10: #54110 стабильно 429 при соседних OK) */
+  const deferOne = (e, queue) => {
+    const i = queue.findIndex(x => x.slug === e.slug && x.number === e.number);
+    if (i >= 0){ queue.splice(i, 1); e.retryAt = Date.now() + 10*60*1000; queue.push(e); }
+  };
   {
     const me = await tg('getMe', {}).catch(e => ({ ok: false, description: 'net:' + e.message }));
-    console.log('DIAG tg.getMe ok=' + me.ok + ' user=' + ((me.result && me.result.username) || me.description || '?'));
+    if (process.env.DIAG_GETME) console.log('DIAG tg.getMe ok=' + me.ok + ' user=' + ((me.result && me.result.username) || me.description || '?'));
   }
   const SEND_GAP = 3000; /* УСТОЙЧИВЫЙ лимит Telegram ~20 сообщ/мин на чат: sendMessage с превью сам ~1-2с, gap 3с -> реальный темп 12-15/мин без 429. Живые логи 20:13: gap 400мс = вечный FLOOD 429 на каждый вызов, реальная скорость падала до 1-2 карточки/мин */
   const markSent = e => {
@@ -471,16 +478,29 @@ async function drainPending(state, budgetMs){
       cap += '\n' + nftUrl;
     }
     const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+    const lpo = e.stripPreview ? { is_disabled: true } : { url: nftUrl, prefer_large_media: true };
     const r = await tg('sendMessage', { chat_id: chat, text: cap, parse_mode: 'HTML', reply_markup: kb,
-      link_preview_options: { url: nftUrl, prefer_large_media: true } });
-    if (r.ok){ markSent(e); if (isBlack) black++; else sent++; }
+      link_preview_options: lpo });
+    if (r.ok){ consec429 = 0; markSent(e); if (isBlack) black++; else sent++; }
     else if (r.error_code === 429){
-      /* единственная правильная реакция на flood: тишина до конца окна.
-         Попытка внутри окна продлевает штраф — так бот и застревал на push=0. */
-      const ra = (r.parameters && r.parameters.retry_after) || 8;
-      state.floodUntil = Date.now() + (ra + 1) * 1000;
-      console.log('FLOOD 429 retry_after=' + ra + 'с — тишина до ' + new Date(state.floodUntil).toISOString());
-      return false; /* false = остановить весь drain */
+      consec429++;
+      if (consec429 >= 3){
+        /* три РАЗНЫЕ карточки подряд = настоящий флуд чата: тишина до конца окна */
+        const ra = (r.parameters && r.parameters.retry_after) || 8;
+        state.floodUntil = Date.now() + (ra + 1) * 1000;
+        console.log('FLOOD 429 x' + consec429 + ' (общий лимит чата) — тишина до ' + new Date(state.floodUntil).toISOString());
+        return false; /* false = остановить весь drain */
+      }
+      /* одиночный 429 = отравленный URL превью ЭТОЙ карточки:
+         кладём её в конец очереди с паузой 10 мин (лимит per-URL протухнет),
+         поток НЕ останавливаем — следующая карточка уходит сразу.
+         Так голова очереди больше никогда не замораживает весь поток. */
+      e.deferCount = (e.deferCount || 0) + 1;
+      if (e.deferCount >= 3) e.stripPreview = true; /* упорный случай: следующий раз без превью, но гарантированно */
+      deferOne(e, state.pending);
+      console.log('429 preview-url ' + e.slug + '#' + e.number + ' — в конец очереди, пауза 10 мин (поток не остановлен)');
+      await new Promise(r => setTimeout(r, 1500));
+      return true; /* продолжаем drain со следующей карточки */
     }
     else console.log('::warning::sendMessage failed: ' + (r.description||'?'));
     await new Promise(r => setTimeout(r, SEND_GAP));
@@ -490,7 +510,7 @@ async function drainPending(state, budgetMs){
     /* ФАЗА 1: всё, у чего фон УЖЕ известен (bdChecked=true — захвачен в момент
        обнаружения, той же страницей, что нашла номер) — шлём немедленно, без
        единого доп. запроса. Чёрные — первыми, строго по возрастанию номера. */
-    let ready = state.pending.filter(e => e.bdChecked);
+    let ready = state.pending.filter(e => e.bdChecked && (!e.retryAt || e.retryAt < Date.now()));
     const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
     ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
     for (const e of ready){
@@ -547,6 +567,11 @@ async function drainChannel(state, budgetMs){
   const deadline = Date.now() + budgetMs;
   state.pushedChan = state.pushedChan || {};
   let sent = 0, black = 0;
+  let consec429 = 0;
+  const deferOne = (e, queue) => {
+    const i = queue.findIndex(x => x.slug === e.slug && x.number === e.number);
+    if (i >= 0){ queue.splice(i, 1); e.retryAt = Date.now() + 10*60*1000; queue.push(e); }
+  };
   /* КАНАЛ = ТОЛЬКО ЧЁРНЫЕ ФОНЫ (бот по-прежнему показывает ВСЁ).
      Проверенное и не-чёрное убираем из очереди канала сразу: не постим и не держим. */
   const isBlackQ = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
@@ -578,14 +603,24 @@ async function drainChannel(state, budgetMs){
       cap += '\n' + nftUrl;
     }
     const kb = { inline_keyboard: [[{ text: 'NFT ↗', url: nftUrl }]] };
+    const lpo = e.stripPreview ? { is_disabled: true } : { url: nftUrl, prefer_large_media: true };
     const r = await tg('sendMessage', { chat_id: chan, text: cap, parse_mode: 'HTML', reply_markup: kb,
-      link_preview_options: { url: nftUrl, prefer_large_media: true } });
-    if (r.ok){ markSent(e); if (isBlack) black++; else sent++; }
+      link_preview_options: lpo });
+    if (r.ok){ consec429 = 0; markSent(e); if (isBlack) black++; else sent++; }
     else if (r.error_code === 429){
-      const ra = (r.parameters && r.parameters.retry_after) || 8;
-      state.floodUntilChan = Date.now() + (ra + 1) * 1000;
-      console.log('FLOOD(chan) 429 retry_after=' + ra + 'с — тишина до ' + new Date(state.floodUntilChan).toISOString());
-      return false;
+      consec429++;
+      if (consec429 >= 3){
+        const ra = (r.parameters && r.parameters.retry_after) || 8;
+        state.floodUntilChan = Date.now() + (ra + 1) * 1000;
+        console.log('FLOOD(chan) 429 x' + consec429 + ' (общий лимит) — тишина до ' + new Date(state.floodUntilChan).toISOString());
+        return false;
+      }
+      e.deferCount = (e.deferCount || 0) + 1;
+      if (e.deferCount >= 3) e.stripPreview = true;
+      deferOne(e, state.pendingChan);
+      console.log('429(chan) preview-url ' + e.slug + '#' + e.number + ' — в конец, пауза 10 мин');
+      await new Promise(r => setTimeout(r, 1500));
+      return true;
     }
     if (isBlack){
       const mid = r.ok && r.result ? r.result.message_id : null;
@@ -605,7 +640,7 @@ async function drainChannel(state, budgetMs){
     /* ФАЗА 1: фон уже известен (bdChecked) — шлём немедленно, без запросов.
        Чёрные — первыми (закреп + авточистка служебной надписи), по возрастанию. */
     const isBlackE = e => e.bd && BLACK_BACKDROP_RE.test(e.bd);
-    let ready = state.pendingChan.filter(e => e.bdChecked && isBlackE(e));
+    let ready = state.pendingChan.filter(e => e.bdChecked && isBlackE(e) && (!e.retryAt || e.retryAt < Date.now()));
     ready.sort((a,b) => (isBlackE(b) - isBlackE(a)) || ((b.mint||0) - (a.mint||0)) || (b.number - a.number));
     for (const e of ready){
       if (Date.now() >= deadline) break;
